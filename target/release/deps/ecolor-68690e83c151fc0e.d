@@ -1,0 +1,12 @@
+C:\Users\ACER\Desktop\mhrv-f\target\release\deps\ecolor-68690e83c151fc0e.d: C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\lib.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\color32.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hsva_gamma.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hsva.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\rgba.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hex_color_runtime.rs
+
+C:\Users\ACER\Desktop\mhrv-f\target\release\deps\libecolor-68690e83c151fc0e.rlib: C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\lib.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\color32.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hsva_gamma.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hsva.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\rgba.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hex_color_runtime.rs
+
+C:\Users\ACER\Desktop\mhrv-f\target\release\deps\libecolor-68690e83c151fc0e.rmeta: C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\lib.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\color32.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hsva_gamma.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hsva.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\rgba.rs C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hex_color_runtime.rs
+
+C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\lib.rs:
+C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\color32.rs:
+C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hsva_gamma.rs:
+C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hsva.rs:
+C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\rgba.rs:
+C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\ecolor-0.28.1\src\hex_color_runtime.rs:
