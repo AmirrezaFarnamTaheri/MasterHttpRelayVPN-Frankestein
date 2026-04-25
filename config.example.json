@@ -1,0 +1,47 @@
+{
+  "config_version": 1,
+  "mode": "apps_script",
+  "google_ip": "216.239.38.120",
+  "front_domain": "www.google.com",
+  "account_groups": [
+    {
+      "label": "primary",
+      "enabled": true,
+      "weight": 1,
+      "auth_key": "example-secret-please-generate-your-own-32chars",
+      "script_ids": [
+        "AKfycbxEXAMPLE_DEPLOYMENT_ID_1",
+        "AKfycbxEXAMPLE_DEPLOYMENT_ID_2"
+      ]
+    }
+  ],
+  "listen_host": "127.0.0.1",
+  "listen_port": 8085,
+  "socks5_port": 8086,
+  "log_level": "info",
+  "verify_ssl": true,
+  "hosts": {},
+  "lan_token": null,
+  "lan_allowlist": null,
+  "domain_overrides": [
+    {
+      "host": "example.com",
+      "force_route": "direct",
+      "never_chunk": true
+    },
+    {
+      "host": ".blocked.example",
+      "force_route": "sni_rewrite",
+      "never_chunk": false
+    }
+  ],
+  "runtime_auto_tune": false,
+  "runtime_profile": "balanced",
+  "range_parallelism": 12,
+  "range_chunk_bytes": 262144,
+  "relay_request_timeout_secs": 25,
+  "outage_reset_enabled": true,
+  "outage_reset_failure_threshold": 3,
+  "outage_reset_window_ms": 5000,
+  "outage_reset_cooldown_ms": 15000
+}
