@@ -1,7 +1,0 @@
-C:\Users\ACER\Desktop\mhrv-f\target\release\deps\presser-8aab3d8cae23af11.d: C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\presser-0.3.1\src\lib.rs
-
-C:\Users\ACER\Desktop\mhrv-f\target\release\deps\libpresser-8aab3d8cae23af11.rlib: C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\presser-0.3.1\src\lib.rs
-
-C:\Users\ACER\Desktop\mhrv-f\target\release\deps\libpresser-8aab3d8cae23af11.rmeta: C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\presser-0.3.1\src\lib.rs
-
-C:\Users\ACER\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\presser-0.3.1\src\lib.rs:
