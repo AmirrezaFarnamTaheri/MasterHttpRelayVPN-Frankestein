@@ -540,7 +540,8 @@ fn default_verify_ssl() -> bool {
 
 impl Config {
     pub fn from_json_str(data: &str) -> Result<Self, ConfigError> {
-        let value: Value = serde_json::from_str(data)?;
+        let mut value: Value = serde_json::from_str(data)?;
+        migrate_legacy_android_account_groups(&mut value);
         Self::from_json_value(value)
     }
 
@@ -554,7 +555,8 @@ impl Config {
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let data = std::fs::read_to_string(path)
             .map_err(|e| ConfigError::Read(path.display().to_string(), e))?;
-        let value: Value = serde_json::from_str(&data)?;
+        let mut value: Value = serde_json::from_str(&data)?;
+        migrate_legacy_android_account_groups(&mut value);
         Self::from_json_value(value)
     }
 
@@ -916,6 +918,48 @@ impl Config {
     }
 }
 
+fn migrate_legacy_android_account_groups(value: &mut Value) {
+    let Some(obj) = value.as_object_mut() else {
+        return;
+    };
+    if obj
+        .get("account_groups")
+        .is_some_and(|groups| !groups.is_null())
+    {
+        return;
+    }
+
+    let has_legacy_ids = obj.get("script_ids").is_some_and(|ids| !ids.is_null());
+    let has_legacy_auth = obj.get("auth_key").is_some_and(|auth| !auth.is_null());
+    if !has_legacy_ids && !has_legacy_auth {
+        return;
+    }
+
+    let mut group = serde_json::Map::new();
+    group.insert(
+        "label".into(),
+        Value::String("legacy-android-primary".into()),
+    );
+    group.insert(
+        "auth_key".into(),
+        obj.get("auth_key")
+            .cloned()
+            .unwrap_or_else(|| Value::String(String::new())),
+    );
+    group.insert(
+        "script_ids".into(),
+        obj.get("script_ids")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+    );
+    group.insert("weight".into(), Value::from(default_weight()));
+    group.insert("enabled".into(), Value::Bool(default_enabled()));
+    obj.insert(
+        "account_groups".into(),
+        Value::Array(vec![Value::Object(group)]),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -943,6 +987,49 @@ mod tests {
         }"#;
         let cfg: Config = serde_json::from_str(s).unwrap();
         cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn migrates_legacy_android_root_script_ids() {
+        let s = r#"{
+            "mode": "apps_script",
+            "script_ids": ["AKfycb_legacy_1", "https://script.google.com/macros/s/AKfycb_legacy_2/exec"],
+            "auth_key": "test-auth-key-please-change-32chars"
+        }"#;
+        let cfg = Config::from_json_str(s).expect("legacy Android config should load");
+        let groups = cfg.account_groups.expect("legacy fields should migrate");
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].label.as_deref(), Some("legacy-android-primary"));
+        assert_eq!(groups[0].auth_key, "test-auth-key-please-change-32chars");
+        assert_eq!(
+            groups[0].script_ids.clone().into_vec(),
+            vec!["AKfycb_legacy_1", "AKfycb_legacy_2"]
+        );
+    }
+
+    #[test]
+    fn canonical_account_groups_take_precedence_over_legacy_android_fields() {
+        let s = r#"{
+            "mode": "apps_script",
+            "script_ids": ["AKfycb_legacy"],
+            "auth_key": "legacy-auth-key",
+            "account_groups": [{
+                "label": "canonical",
+                "auth_key": "test-auth-key-please-change-32chars",
+                "script_ids": "AKfycb_canonical"
+            }]
+        }"#;
+        let cfg = Config::from_json_str(s).expect("canonical config should load");
+        let groups = cfg.account_groups.expect("canonical groups should remain");
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].label.as_deref(), Some("canonical"));
+        assert_eq!(groups[0].auth_key, "test-auth-key-please-change-32chars");
+        assert_eq!(
+            groups[0].script_ids.clone().into_vec(),
+            vec!["AKfycb_canonical"]
+        );
     }
 
     #[test]

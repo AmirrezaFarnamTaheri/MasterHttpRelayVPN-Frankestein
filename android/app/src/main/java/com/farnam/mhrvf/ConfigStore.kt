@@ -3,6 +3,101 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+
+private const val DEFAULT_ANDROID_GOOGLE_IP = "142.251.36.68"
+private const val DEFAULT_RELAY_PATH = "/api/api"
+
+private fun extractScriptId(input: String): String {
+    var s = input.trim()
+    if (s.isEmpty()) return s
+    val marker = "/macros/s/"
+    val i = s.indexOf(marker)
+    if (i >= 0) s = s.substring(i + marker.length)
+    val slash = s.indexOf('/')
+    if (slash >= 0) s = s.substring(0, slash)
+    val q = s.indexOf('?')
+    if (q >= 0) s = s.substring(0, q)
+    return s.trim()
+}
+
+private fun scriptIdUrl(id: String): String =
+    "https://script.google.com/macros/s/${extractScriptId(id)}/exec"
+
+private fun stringList(arr: JSONArray?): List<String> =
+    arr?.let {
+        buildList {
+            for (i in 0 until it.length()) add(it.optString(i))
+        }
+    }?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+
+private fun scriptIdsFromValue(value: Any?): List<String> =
+    when (value) {
+        is JSONArray -> stringList(value)
+        is String -> listOf(value.trim()).filter { it.isNotEmpty() }
+        else -> emptyList()
+    }.map { extractScriptId(it) }.filter { it.isNotEmpty() }.distinct()
+
+private fun canonicalAccountGroups(
+    ids: List<String>,
+    authKey: String,
+    preservedJson: String,
+): JSONArray? {
+    if (ids.isEmpty() && authKey.isBlank() && preservedJson.isBlank()) return null
+    val groups = if (preservedJson.isNotBlank()) {
+        try {
+            JSONArray(preservedJson)
+        } catch (_: Throwable) {
+            JSONArray()
+        }
+    } else {
+        JSONArray()
+    }
+    val targetIndex = (0 until groups.length())
+        .firstOrNull { groups.optJSONObject(it)?.optBoolean("enabled", true) == true }
+        ?: 0
+    val first = groups.optJSONObject(targetIndex) ?: JSONObject().apply {
+        put("label", "primary")
+        put("weight", 1)
+        put("enabled", true)
+    }
+    first.put("auth_key", authKey.trim())
+    first.put("script_ids", JSONArray().apply { ids.forEach { put(it) } })
+    if (groups.length() == 0) {
+        groups.put(first)
+    } else {
+        groups.put(targetIndex, first)
+    }
+    return groups
+}
+
+private data class AccountGroupsProjection(
+    val urls: List<String>,
+    val authKey: String,
+    val preservedJson: String,
+)
+
+private fun projectAccountGroups(obj: JSONObject): AccountGroupsProjection {
+    val groups = obj.optJSONArray("account_groups")
+    if (groups == null || groups.length() == 0) {
+        val legacyIds = scriptIdsFromValue(obj.opt("script_ids"))
+        return AccountGroupsProjection(
+            urls = legacyIds.map { scriptIdUrl(it) },
+            authKey = obj.optString("auth_key", ""),
+            preservedJson = "",
+        )
+    }
+    val selected = (0 until groups.length())
+        .mapNotNull { groups.optJSONObject(it) }
+        .firstOrNull { it.optBoolean("enabled", true) }
+        ?: groups.optJSONObject(0)
+    val ids = scriptIdsFromValue(selected?.opt("script_ids"))
+    return AccountGroupsProjection(
+        urls = ids.map { scriptIdUrl(it) },
+        authKey = selected?.optString("auth_key", "") ?: "",
+        preservedJson = groups.toString(),
+    )
+}
+
 /**
  * Config I/O. The source of truth is a JSON file in the app's files dir —
  * the Rust side parses the same file, so we don't maintain two schemas.
@@ -75,6 +170,14 @@ data class MhrvConfig(
     /** One Apps Script ID or deployment URL per entry. */
     val appsScriptUrls: List<String> = emptyList(),
     val authKey: String = "",
+    /**
+     * Canonical `account_groups` JSON imported from Desktop/Rust configs.
+     *
+     * Android's normal setup edits the first enabled group for mobile
+     * ergonomics, but this preserves additional Desktop-created groups and
+     * advanced per-group fields during save/share round-trips.
+     */
+    val preservedAccountGroupsJson: String = "",
     /** Native serverless JSON relay fields; serialized under Rust's `vercel` key. */
     val serverlessBaseUrl: String = "",
     val serverlessAuthKey: String = "",
@@ -117,41 +220,15 @@ data class MhrvConfig(
     val uiLang: UiLang = UiLang.AUTO,
 ) {
     /**
-     * Extract just the deployment ID from either a full
-     * `https://script.google.com/macros/s/<ID>/exec` URL or a bare ID.
-     *
-     * Implementation note (this used to be buggy): never use the chained
-     * `substringBefore(delim, missingDelimiterValue)` form passing the
-     * original input as the fallback. Example of what that caused:
-     *   "https://.../macros/s/X/exec"
-     *     .substringAfter("/macros/s/", s)  -> "X/exec"
-     *     .substringBefore("/", s)          -> "X"
-     *     .substringBefore("?", s)          -> FALLBACK fires because
-     *                                           "?" isn't in "X",
-     *                                           returning the ORIGINAL URL
-     * → we'd then save the full URL as the "ID", and on reload the UI
-     * would build `https://.../macros/s/<full-URL>/exec`, producing the
-     * "extra https:// and extra /exec" symptom users reported. Keep the
-     * extraction linear and don't reach for a fallback.
+     * Serialize the phone-editable config subset plus preserved advanced JSON.
+     * Apps Script credentials are always written as canonical `account_groups`;
+     * legacy top-level `script_ids` / `auth_key` are import-only.
      */
-    private fun extractId(input: String): String {
-        var s = input.trim()
-        if (s.isEmpty()) return s
-        val marker = "/macros/s/"
-        val i = s.indexOf(marker)
-        if (i >= 0) s = s.substring(i + marker.length)
-        // Strip /exec or /dev suffix (or any path after the ID).
-        val slash = s.indexOf('/')
-        if (slash >= 0) s = s.substring(0, slash)
-        // Strip query string.
-        val q = s.indexOf('?')
-        if (q >= 0) s = s.substring(0, q)
-        return s.trim()
-    }
     fun toJson(): String {
         val ids = appsScriptUrls
-            .map { extractId(it) }
+            .map { extractScriptId(it) }
             .filter { it.isNotEmpty() }
+            .distinct()
         val obj = JSONObject().apply {
             // `mode` is required — without it serde errors with
             // "missing field `mode`" and startProxy silently returns 0.
@@ -164,14 +241,14 @@ data class MhrvConfig(
             put("listen_host", listenHost)
             put("listen_port", listenPort)
             socks5Port?.let { put("socks5_port", it) }
-            // In direct mode these are unused by the Rust side, but we
-            // still persist whatever the user typed so flipping back to
-            // apps_script mode doesn't wipe their settings.
-            put("script_ids", JSONArray().apply { ids.forEach { put(it) } })
-            put("auth_key", authKey)
+            // Canonical Apps Script / full-mode credentials. Android edits a
+            // simple primary group, but preserves imported Desktop groups.
+            canonicalAccountGroups(ids, authKey, preservedAccountGroupsJson)?.let {
+                put("account_groups", it)
+            }
             put("vercel", JSONObject().apply {
                 put("base_url", serverlessBaseUrl.trim())
-                put("relay_path", serverlessRelayPath.trim().ifEmpty { "/api/api" })
+                put("relay_path", serverlessRelayPath.trim().ifEmpty { DEFAULT_RELAY_PATH })
                 put("auth_key", serverlessAuthKey.trim())
                 put("verify_tls", true)
             })
@@ -232,7 +309,7 @@ data class MhrvConfig(
     }
     /** Convenience: is there at least one usable deployment ID? */
     val hasDeploymentId: Boolean get() =
-        appsScriptUrls.any { extractId(it).isNotEmpty() }
+        appsScriptUrls.any { extractScriptId(it).isNotEmpty() }
     val hasServerlessConfig: Boolean get() =
         serverlessBaseUrl.isNotBlank() &&
             serverlessAuthKey.isNotBlank() &&
@@ -247,13 +324,7 @@ object ConfigStore {
         if (!f.exists()) return MhrvConfig()
         return try {
             val obj = JSONObject(f.readText())
-            val ids = obj.optJSONArray("script_ids")?.let { arr ->
-                buildList { for (i in 0 until arr.length()) add(arr.optString(i)) }
-            }?.filter { it.isNotBlank() }.orEmpty()
-            // For display we turn each ID back into the full URL form —
-            // easier to paste-verify, and the Kotlin side doesn't depend
-            // on it (extractId re-parses on save).
-            val urls = ids.map { "https://script.google.com/macros/s/$it/exec" }
+            val accountGroups = projectAccountGroups(obj)
             val sni = obj.optJSONArray("sni_hosts")?.let { arr ->
                 buildList { for (i in 0 until arr.length()) add(arr.optString(i)) }
             }?.filter { it.isNotBlank() }.orEmpty()
@@ -267,15 +338,16 @@ object ConfigStore {
                 listenHost = obj.optString("listen_host", "127.0.0.1"),
                 listenPort = obj.optInt("listen_port", 8080),
                 socks5Port = obj.optInt("socks5_port", 1081).takeIf { it > 0 },
-                appsScriptUrls = urls,
-                authKey = obj.optString("auth_key", ""),
+                appsScriptUrls = accountGroups.urls,
+                authKey = accountGroups.authKey,
+                preservedAccountGroupsJson = accountGroups.preservedJson,
                 serverlessBaseUrl = obj.optJSONObject("vercel")?.optString("base_url", "") ?: "",
                 serverlessAuthKey = obj.optJSONObject("vercel")?.optString("auth_key", "") ?: "",
-                serverlessRelayPath = obj.optJSONObject("vercel")?.optString("relay_path", "/api/api")
-                    ?.takeIf { it.isNotBlank() } ?: "/api/api",
+                serverlessRelayPath = obj.optJSONObject("vercel")?.optString("relay_path", DEFAULT_RELAY_PATH)
+                    ?.takeIf { it.isNotBlank() } ?: DEFAULT_RELAY_PATH,
                 frontDomain = obj.optString("front_domain", "www.google.com"),
                 sniHosts = sni,
-                googleIp = obj.optString("google_ip", "142.251.36.68"),
+                googleIp = obj.optString("google_ip", DEFAULT_ANDROID_GOOGLE_IP),
                 verifySsl = obj.optBoolean("verify_ssl", true),
                 logLevel = obj.optString("log_level", "info"),
                 parallelRelay = obj.optInt("parallel_relay", 1),
@@ -327,20 +399,16 @@ object ConfigStore {
             Mode.FULL -> "full"
         })
         val ids = cfg.appsScriptUrls
-            .map { url ->
-                val marker = "/macros/s/"
-                var s = url.trim()
-                val i = s.indexOf(marker)
-                if (i >= 0) s = s.substring(i + marker.length)
-                s.substringBefore("/").substringBefore("?").trim()
-            }
+            .map { url -> extractScriptId(url) }
             .filter { it.isNotEmpty() }
-        if (ids.isNotEmpty()) obj.put("script_ids", JSONArray().apply { ids.forEach { put(it) } })
-        if (cfg.authKey.isNotBlank()) obj.put("auth_key", cfg.authKey)
+            .distinct()
+        canonicalAccountGroups(ids, cfg.authKey, cfg.preservedAccountGroupsJson)?.let {
+            obj.put("account_groups", it)
+        }
         if (cfg.serverlessBaseUrl.isNotBlank() || cfg.serverlessAuthKey.isNotBlank()) {
             obj.put("vercel", JSONObject().apply {
                 put("base_url", cfg.serverlessBaseUrl.trim())
-                put("relay_path", cfg.serverlessRelayPath.trim().ifEmpty { "/api/api" })
+                put("relay_path", cfg.serverlessRelayPath.trim().ifEmpty { DEFAULT_RELAY_PATH })
                 put("auth_key", cfg.serverlessAuthKey.trim())
                 put("verify_tls", true)
             })
@@ -394,11 +462,8 @@ object ConfigStore {
             null
         }
     }
-    private fun loadFromJson(obj: JSONObject): MhrvConfig {
-        val ids = obj.optJSONArray("script_ids")?.let { arr ->
-            buildList { for (i in 0 until arr.length()) add(arr.optString(i)) }
-        }?.filter { it.isNotBlank() }.orEmpty()
-        val urls = ids.map { "https://script.google.com/macros/s/$it/exec" }
+    internal fun loadFromJson(obj: JSONObject): MhrvConfig {
+        val accountGroups = projectAccountGroups(obj)
         val sni = obj.optJSONArray("sni_hosts")?.let { arr ->
             buildList { for (i in 0 until arr.length()) add(arr.optString(i)) }
         }?.filter { it.isNotBlank() }.orEmpty()
@@ -412,15 +477,16 @@ object ConfigStore {
             listenHost = obj.optString("listen_host", "127.0.0.1"),
             listenPort = obj.optInt("listen_port", 8080),
             socks5Port = obj.optInt("socks5_port", 1081).takeIf { it > 0 },
-            appsScriptUrls = urls,
-            authKey = obj.optString("auth_key", ""),
+            appsScriptUrls = accountGroups.urls,
+            authKey = accountGroups.authKey,
+            preservedAccountGroupsJson = accountGroups.preservedJson,
             serverlessBaseUrl = obj.optJSONObject("vercel")?.optString("base_url", "") ?: "",
             serverlessAuthKey = obj.optJSONObject("vercel")?.optString("auth_key", "") ?: "",
-            serverlessRelayPath = obj.optJSONObject("vercel")?.optString("relay_path", "/api/api")
-                ?.takeIf { it.isNotBlank() } ?: "/api/api",
+            serverlessRelayPath = obj.optJSONObject("vercel")?.optString("relay_path", DEFAULT_RELAY_PATH)
+                ?.takeIf { it.isNotBlank() } ?: DEFAULT_RELAY_PATH,
             frontDomain = obj.optString("front_domain", "www.google.com"),
             sniHosts = sni,
-            googleIp = obj.optString("google_ip", "142.251.36.68"),
+            googleIp = obj.optString("google_ip", DEFAULT_ANDROID_GOOGLE_IP),
             verifySsl = obj.optBoolean("verify_ssl", true),
             logLevel = obj.optString("log_level", "info"),
             parallelRelay = obj.optInt("parallel_relay", 1),

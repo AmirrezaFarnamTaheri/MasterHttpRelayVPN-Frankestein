@@ -249,11 +249,13 @@ struct FormState {
     socks5_port: String,
     log_level: String,
     verify_ssl: bool,
+    enable_batching: bool,
     vercel_base_url: String,
     vercel_relay_path: String,
     vercel_auth_key: String,
     vercel_verify_tls: bool,
     vercel_max_body_mb: u32,
+    vercel_enable_batching: bool,
     show_vercel_auth_key: bool,
     show_first_run_wizard: bool,
     wizard_step: usize,
@@ -440,11 +442,13 @@ fn load_form() -> (FormState, Option<String>) {
             socks5_port: c.socks5_port.map(|p| p.to_string()).unwrap_or_default(),
             log_level: c.log_level,
             verify_ssl: c.verify_ssl,
+            enable_batching: c.enable_batching,
             vercel_base_url: c.vercel.base_url,
             vercel_relay_path: c.vercel.relay_path,
             vercel_auth_key: c.vercel.auth_key,
             vercel_verify_tls: c.vercel.verify_tls,
             vercel_max_body_mb: c.vercel.max_body_bytes.max(1024).div_ceil(1024 * 1024) as u32,
+            vercel_enable_batching: c.vercel.enable_batching,
             show_vercel_auth_key: false,
             show_first_run_wizard: false,
             wizard_step: 0,
@@ -503,11 +507,13 @@ fn load_form() -> (FormState, Option<String>) {
             socks5_port: "8086".into(),
             log_level: "info".into(),
             verify_ssl: true,
+            enable_batching: false,
             vercel_base_url: String::new(),
             vercel_relay_path: "/api/api".into(),
             vercel_auth_key: String::new(),
             vercel_verify_tls: true,
             vercel_max_body_mb: 4,
+            vercel_enable_batching: false,
             show_vercel_auth_key: false,
             show_first_run_wizard: true,
             wizard_step: 0,
@@ -695,7 +701,7 @@ impl FormState {
             log_level: self.log_level.trim().to_string(),
             verify_ssl: self.verify_ssl,
             hosts: std::collections::HashMap::new(),
-            enable_batching: false,
+            enable_batching: self.enable_batching,
             upstream_socks5: {
                 let v = self.upstream_socks5.trim();
                 if v.is_empty() {
@@ -761,7 +767,7 @@ impl FormState {
                 auth_key: self.vercel_auth_key.trim().to_string(),
                 verify_tls: self.vercel_verify_tls,
                 max_body_bytes: (self.vercel_max_body_mb.max(1) as usize) * 1024 * 1024,
-                enable_batching: false,
+                enable_batching: self.vercel_enable_batching,
             },
             lan_token: self.lan_token.as_deref().and_then(clean_optional_text),
             lan_allowlist: self
@@ -804,6 +810,8 @@ struct ConfigWire<'a> {
     socks5_port: Option<u16>,
     log_level: &'a str,
     verify_ssl: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    enable_batching: bool,
     vercel: &'a VercelConfig,
     #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
     hosts: &'a std::collections::HashMap<String, String>,
@@ -849,6 +857,8 @@ struct ConfigWire<'a> {
     bypass_doh_hosts: &'a Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     fronting_groups: &'a Vec<FrontingGroup>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    domain_overrides: &'a Vec<DomainOverride>,
     #[serde(skip_serializing_if = "Option::is_none")]
     lan_token: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -902,6 +912,7 @@ impl<'a> From<&'a Config> for ConfigWire<'a> {
             socks5_port: c.socks5_port,
             log_level: c.log_level.as_str(),
             verify_ssl: c.verify_ssl,
+            enable_batching: c.enable_batching,
             vercel: &c.vercel,
             hosts: &c.hosts,
             upstream_socks5: c.upstream_socks5.as_deref(),
@@ -928,6 +939,7 @@ impl<'a> From<&'a Config> for ConfigWire<'a> {
             tunnel_doh: c.tunnel_doh,
             bypass_doh_hosts: &c.bypass_doh_hosts,
             fronting_groups: &c.fronting_groups,
+            domain_overrides: &c.domain_overrides,
             lan_token: c.lan_token.as_deref(),
             lan_allowlist: c.lan_allowlist.as_ref(),
             fetch_ips_from_api: c.fetch_ips_from_api,
@@ -942,6 +954,183 @@ impl<'a> From<&'a Config> for ConfigWire<'a> {
             relay_rate_limit_burst: c.relay_rate_limit_burst,
             account_groups: c.account_groups.as_ref(),
         }
+    }
+}
+
+#[cfg(test)]
+mod config_wire_tests {
+    use super::*;
+
+    #[test]
+    fn config_wire_preserves_domain_overrides_and_batching_flags() {
+        let cfg = Config::from_json_str(
+            r#"{
+                "mode": "vercel_edge",
+                "enable_batching": true,
+                "vercel": {
+                    "base_url": "https://example.vercel.app",
+                    "relay_path": "/api/api",
+                    "auth_key": "test-auth-key-please-change-32chars",
+                    "enable_batching": true
+                },
+                "domain_overrides": [{
+                    "host": ".example.com",
+                    "force_route": "relay",
+                    "never_chunk": true
+                }]
+            }"#,
+        )
+        .expect("config should load");
+
+        let value = serde_json::to_value(ConfigWire::from(&cfg)).expect("wire should serialize");
+
+        assert_eq!(value["enable_batching"], true);
+        assert_eq!(value["vercel"]["enable_batching"], true);
+        assert_eq!(value["domain_overrides"][0]["host"], ".example.com");
+        assert_eq!(value["domain_overrides"][0]["force_route"], "relay");
+        assert_eq!(value["domain_overrides"][0]["never_chunk"], true);
+    }
+
+    #[test]
+    fn config_wire_serializes_all_current_config_fields_when_present() {
+        let cfg = Config::from_json_str(
+            r#"{
+                "config_version": 1,
+                "mode": "apps_script",
+                "google_ip": "216.239.38.120",
+                "front_domain": "www.google.com",
+                "listen_host": "127.0.0.1",
+                "listen_port": 8085,
+                "socks5_port": 8086,
+                "log_level": "debug",
+                "verify_ssl": true,
+                "hosts": {"example.local": "127.0.0.1"},
+                "enable_batching": true,
+                "upstream_socks5": "127.0.0.1:50529",
+                "parallel_relay": 3,
+                "coalesce_step_ms": 50,
+                "coalesce_max_ms": 900,
+                "relay_rate_limit_qps": 2.5,
+                "relay_rate_limit_burst": 5,
+                "runtime_profile": "max_speed",
+                "runtime_auto_tune": true,
+                "range_parallelism": 8,
+                "range_chunk_bytes": 262144,
+                "relay_request_timeout_secs": 25,
+                "request_timeout_secs": 45,
+                "auto_blacklist_strikes": 4,
+                "auto_blacklist_window_secs": 60,
+                "auto_blacklist_cooldown_secs": 180,
+                "sni_hosts": ["www.google.com", "drive.google.com"],
+                "fetch_ips_from_api": true,
+                "max_ips_to_scan": 42,
+                "scan_batch_size": 64,
+                "google_ip_validation": true,
+                "normalize_x_graphql": true,
+                "youtube_via_relay": true,
+                "passthrough_hosts": ["localhost", ".internal.example"],
+                "block_quic": true,
+                "tunnel_doh": true,
+                "bypass_doh_hosts": ["dns.google"],
+                "fronting_groups": [{
+                    "name": "vercel",
+                    "ip": "76.76.21.21",
+                    "sni": "react.dev",
+                    "domains": ["vercel.com"]
+                }],
+                "domain_overrides": [{
+                    "host": ".example.com",
+                    "force_route": "relay",
+                    "never_chunk": true
+                }],
+                "account_groups": [{
+                    "label": "primary",
+                    "auth_key": "test-auth-key-please-change-32chars",
+                    "script_ids": ["AKfycb_primary", "AKfycb_backup"],
+                    "weight": 2,
+                    "enabled": true
+                }],
+                "vercel": {
+                    "base_url": "https://example.vercel.app",
+                    "relay_path": "/api/api",
+                    "auth_key": "test-auth-key-please-change-32chars",
+                    "verify_tls": true,
+                    "max_body_bytes": 2097152,
+                    "enable_batching": true
+                },
+                "lan_token": "local-test-token",
+                "lan_allowlist": ["127.0.0.1/32"],
+                "outage_reset_enabled": true,
+                "outage_reset_failure_threshold": 5,
+                "outage_reset_window_ms": 6000,
+                "outage_reset_cooldown_ms": 30000
+            }"#,
+        )
+        .expect("complete config should load");
+
+        let value = serde_json::to_value(ConfigWire::from(&cfg)).expect("wire should serialize");
+        let obj = value.as_object().expect("wire output should be an object");
+        let missing: Vec<&str> = [
+            "config_version",
+            "mode",
+            "google_ip",
+            "front_domain",
+            "listen_host",
+            "listen_port",
+            "socks5_port",
+            "log_level",
+            "verify_ssl",
+            "hosts",
+            "enable_batching",
+            "upstream_socks5",
+            "parallel_relay",
+            "coalesce_step_ms",
+            "coalesce_max_ms",
+            "relay_rate_limit_qps",
+            "relay_rate_limit_burst",
+            "runtime_profile",
+            "runtime_auto_tune",
+            "range_parallelism",
+            "range_chunk_bytes",
+            "relay_request_timeout_secs",
+            "request_timeout_secs",
+            "auto_blacklist_strikes",
+            "auto_blacklist_window_secs",
+            "auto_blacklist_cooldown_secs",
+            "sni_hosts",
+            "fetch_ips_from_api",
+            "max_ips_to_scan",
+            "scan_batch_size",
+            "google_ip_validation",
+            "normalize_x_graphql",
+            "youtube_via_relay",
+            "passthrough_hosts",
+            "block_quic",
+            "tunnel_doh",
+            "bypass_doh_hosts",
+            "fronting_groups",
+            "domain_overrides",
+            "account_groups",
+            "vercel",
+            "lan_token",
+            "lan_allowlist",
+            "outage_reset_enabled",
+            "outage_reset_failure_threshold",
+            "outage_reset_window_ms",
+            "outage_reset_cooldown_ms",
+        ]
+        .into_iter()
+        .filter(|key| !obj.contains_key(*key))
+        .collect();
+
+        assert!(missing.is_empty(), "ConfigWire dropped fields: {missing:?}");
+        assert_eq!(
+            value["account_groups"][0]["script_ids"][0],
+            "AKfycb_primary"
+        );
+        assert_eq!(value["vercel"]["max_body_bytes"], 2_097_152);
+        assert_eq!(value["fronting_groups"][0]["name"], "vercel");
+        assert_eq!(value["domain_overrides"][0]["never_chunk"], true);
     }
 }
 
@@ -2596,6 +2785,17 @@ impl eframe::App for App {
                         ui.add_space(120.0 + 8.0);
                         ui.checkbox(&mut self.form.vercel_verify_tls, "Verify relay TLS certificate");
                     });
+                    ui.horizontal(|ui| {
+                        ui.add_space(120.0 + 8.0);
+                        ui.checkbox(
+                            &mut self.form.vercel_enable_batching,
+                            "Enable JSON batch envelope",
+                        )
+                        .on_hover_text(
+                            "Experimental serverless relay batching. Keep off unless your deployed \
+                             JSON relay supports the {k,q:[...]} batch request envelope.",
+                        );
+                    });
                     form_row(ui, "Max body MB", Some("Guardrail for one client request sent through JSON/base64."), |ui| {
                         ui.add(
                             egui::DragValue::new(&mut self.form.vercel_max_body_mb)
@@ -3032,6 +3232,18 @@ impl eframe::App for App {
                     });
                     ui.horizontal(|ui| {
                         ui.add_space(120.0 + 8.0);
+                        ui.checkbox(
+                            &mut self.form.enable_batching,
+                            "Preserve legacy Apps Script batching flag",
+                        )
+                        .on_hover_text(
+                            "Advanced compatibility flag for old or hand-edited configs. Runtime \
+                             batching for Serverless JSON is controlled by the JSON batch envelope \
+                             option in the Serverless JSON relay section.",
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.add_space(120.0 + 8.0);
                         // Per-group toggles exist inside the multi-account editor.
                     });
                     ui.horizontal(|ui| {
@@ -3218,6 +3430,7 @@ impl eframe::App for App {
                                     self.form.socks5_port = cfg.socks5_port.map(|p| p.to_string()).unwrap_or_default();
                                     self.form.log_level = cfg.log_level.clone();
                                     self.form.verify_ssl = cfg.verify_ssl;
+                                    self.form.enable_batching = cfg.enable_batching;
                                     self.form.vercel_base_url = cfg.vercel.base_url.clone();
                                     self.form.vercel_relay_path = cfg.vercel.relay_path.clone();
                                     self.form.vercel_auth_key = cfg.vercel.auth_key.clone();
@@ -3228,6 +3441,7 @@ impl eframe::App for App {
                                         .max(1024)
                                         .div_ceil(1024 * 1024)
                                         as u32;
+                                    self.form.vercel_enable_batching = cfg.vercel.enable_batching;
                                     self.form.upstream_socks5 = cfg.upstream_socks5.clone().unwrap_or_default();
                                     self.form.parallel_relay = cfg.parallel_relay;
                                     self.form.coalesce_step_ms = cfg.coalesce_step_ms;
