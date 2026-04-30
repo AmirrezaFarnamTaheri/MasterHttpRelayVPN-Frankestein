@@ -1,18 +1,39 @@
-# Apps Script source (mirrored)
+# Apps Script Relays
 
-The file `Code.gs` next to this README matches the upstream Apps Script relay maintained by the original project. Upstream home: <https://github.com/masterking32/MasterHttpRelayVPN>.
+This directory contains deploy-ready Google Apps Script files used by `mhrv-f`.
+Use the file that matches the mode you selected in the client.
 
-This copy lives in our repo for two reasons:
+## Files
 
-1. **Survives upstream outages**: if the user is on a network where raw.githubusercontent.com is temporarily unreachable but they can clone or ZIP this repo, they still have the deploy-ready file.
-2. **Pins what we tested against**: the relay protocol between `mhrv-f` and the script is informal; upstream changes can silently break us. Keeping a snapshot here lets us diff and see if a spec drift is responsible for any reported breakage.
+- `Code.gs`: normal `apps_script` relay.
+- `CodeFull.gs`: full-tunnel relay channel for `tunnel-node`.
+- `CodeCloudflareWorker.gs`: Apps Script entry that sends the final fetch
+  through a private Cloudflare Worker.
 
-All credit for the original `Code.gs` concept and protocol goes to [@masterking32](https://github.com/masterking32).
+## Deployment Checklist
 
-This repository’s `assets/apps_script/Code.gs` / `CodeFull.gs` are **maintained copies** with a few pragmatic hardening changes based on real-world reports:
+1. Open <https://script.google.com> and create a project.
+2. Delete the placeholder code.
+3. Paste the full contents of the script you need.
+4. Set the required secret in the script:
+   - `AUTH_KEY` for `Code.gs`
+   - `TUNNEL_AUTH_KEY` and `TUNNEL_URL` for `CodeFull.gs`
+   - `AUTH_KEY`, `WORKER_URL`, and `WORKER_AUTH_KEY` for
+     `CodeCloudflareWorker.gs`
+5. Deploy as a Web app:
+   - Execute as: **Me**
+   - Who has access: **Anyone**
+6. Copy the Deployment ID into the matching `account_groups[].script_ids`
+   entry in `mhrv-f`.
 
-- **Header privacy hardening**: we strip forwarded-IP and proxy chain headers, and we use a small **allowlist** of forwarded headers to reduce accidental identity leakage.
-- **No obfuscated/minified variants**: obfuscated Apps Script in a public repo is a bad idea (hard to audit, easy to smuggle secrets). We intentionally keep the script readable.
-- **Optional Telegram quota notifications (off by default)**: a tiny opt-in helper to warn when Apps Script usage approaches the daily limit.
+## Safety Notes
 
-If you're using mhrv-f, follow the deploy instructions in the script header. The only required edit is still `AUTH_KEY` — set it to a strong secret and reuse that exact string in your `mhrv-f` config.
+- Use long random secrets. Do not reuse public examples.
+- Redeploy as a new version after changing a script constant.
+- Do not publish a relay with a blank or example secret.
+- Keep `DIAGNOSTIC_MODE=false` except while debugging setup problems.
+- Leave `CACHE_SPREADSHEET_ID` blank unless you intentionally want small public
+  GET responses cached in a Google Sheet you control.
+
+For the Cloudflare Worker exit path, see
+[`docs/cloudflare-worker-json-relay.md`](../../docs/cloudflare-worker-json-relay.md).

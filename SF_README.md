@@ -34,7 +34,7 @@ Then click **Deploy → New deployment → Web app**:
 
 Copy the long ID from the URL — that’s your **Deployment ID**.
 
-> Can’t reach `script.google.com` because it’s blocked? Run mhrv-f first in `google_only` mode (use [`config.google-only.example.json`](config.google-only.example.json)). It only relays Google sites and lets you reach the Apps Script editor through the bypass tunnel. Do step 1 in your browser, then switch back to normal mode.
+> Can’t reach `script.google.com` because it’s blocked? Run mhrv-f first in `direct` mode (use [`config.direct.example.json`](config.direct.example.json)). It routes Google sites through SNI rewrite and can also use configured fronting_groups, letting you reach the Apps Script editor through the bypass tunnel. Do step 1 in your browser, then switch back to normal mode.
 
 **2. Install and run mhrv-f.**
 
@@ -89,57 +89,6 @@ Quota exhaustion is the #1 real-world failure mode. Add multiple Deployment IDs 
 
 - یک حساب گوگل معمولی (رایگان).
 - بار اول ۵ تا ۱۰ دقیقه وقت.
-- برنامهٔ mhrv-f برای ویندوز / مک / لینوکس / اندروید (از Releases دانلود کنید).
-
-### سه مرحله
-
-**۱. ساخت ریله در حساب گوگل (فقط یک بار).**
-
-به `script.google.com` بروید، وارد حساب گوگل شوید و روی **New project** بزنید. کد پیش‌فرض را پاک کنید و محتوای [`assets/apps_script/Code.gs`](assets/apps_script/Code.gs) را جای‌گذاری کنید. خط `AUTH_KEY = "..."` را به یک رمز قوی که فقط خودتان می‌دانید تغییر دهید. سپس **Deploy → New deployment → Web app** را بزنید، گزینهٔ "Execute as: Me" و "Who has access: Anyone" را انتخاب کنید. آی‌دی طولانی توی URL را کپی کنید — این **Deployment ID** شماست.
-
-> اگر `script.google.com` خودش بسته است، اول mhrv-f را در حالت `google_only` اجرا کنید (از [`config.google-only.example.json`](config.google-only.example.json) استفاده کنید). این حالت فقط سایت‌های گوگل را تونل می‌کند تا بتوانید به ویرایشگر Apps Script برسید. مرحلهٔ ۱ را در مرورگر انجام دهید و بعد به حالت معمولی برگردید.
-
-**۲. نصب و اجرای mhrv-f.**
-
-| سیستم | کاری که باید بکنید |
-|---|---|
-| ویندوز | روی `run.bat` دو بار کلیک کنید |
-| مک | روی `run.command` دو بار کلیک کنید |
-| لینوکس | در ترمینال `./run.sh` را اجرا کنید |
-| اندروید | فایل APK را از Releases نصب کنید |
-
-اولین اجرا رمز عبور شما را می‌خواهد — فقط برای نصب یک گواهی محلی کوچک تا سایت‌های HTTPS از تونل عبور کنند. هیچ چیزی به جایی فرستاده نمی‌شود.
-
-**۳. وارد کردن مشخصات و اتصال.**
-
-در برنامه (بخش Advanced → **Multi-account pools**) یک گروه بسازید و این دو را وارد کنید:
-
-- **Auth key** — همان رمزی که در `Code.gs` گذاشتید (`AUTH_KEY`)
-- **Deployment ID** — همان آی‌دی بعد از Deploy
-
-روی **Start** بزنید.
-
-### مشکلات رایج
-
-**در مرورگر «504 Relay timeout» نشان می‌دهد؟**
-
-Apps Script شما پاسخ نمی‌دهد. به `script.google.com` برگردید، **Deploy → Manage deployments → Edit (آیکن مداد)** را بزنید، گزینهٔ "Version" را روی **New version** بگذارید و Deploy کنید. **آی‌دی جدید** Deployment را کپی کنید و در برنامه جای‌گذاری کنید.
-
-**سهمیهٔ روزانه تمام شده؟**
-
-چند Deployment ID و/یا چند گروه حساب (چند حساب گوگل) اضافه کنید. برنامه بین آن‌ها به صورت چرخشی سوییچ می‌کند.
- 
-
-نسخهٔ کوتاه و بدون اصطلاحات فنی. برای جزئیات کامل، [راهنمای کامل فارسی](README.md#راهنمای-فارسی) را ببینید.
-
-### این چیست؟
-
-یک ابزار رایگان برای دور زدن سانسور اینترنت از طریق یک ریلهٔ شخصی روی حساب گوگل خودتان. سرویس‌دهندهٔ شما فقط می‌بیند که در حال صحبت با گوگل هستید؛ گوگل بقیهٔ سایت‌ها را برای شما باز می‌کند.
-
-### چه چیزی نیاز دارید؟
-
-- یک حساب گوگل معمولی (رایگان).
-- بار اول ۵ تا ۱۰ دقیقه وقت.
 - برنامهٔ mhrv-f برای ویندوز / مک / لینوکس / اندروید — [از اینجا دانلود کنید](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/releases/latest).
 
 ### سه مرحله
@@ -147,7 +96,7 @@ Apps Script شما پاسخ نمی‌دهد. به `script.google.com` برگرد
 **۱. ساخت ریله در حساب گوگل (فقط یک بار).**
 به <https://script.google.com> بروید، وارد حساب گوگل شوید و روی **New project** بزنید. کد پیش‌فرض را پاک کنید و محتوای [فایل Code.gs](assets/apps_script/Code.gs) همین مخزن را در آن جای‌گذاری کنید. خط `AUTH_KEY = "..."` را به یک رمز دلخواه که فقط خودتان می‌دانید تغییر دهید. سپس **Deploy → New deployment → Web app** را بزنید، گزینهٔ "Execute as: Me" و "Who has access: Anyone" را انتخاب کنید. آی‌دی طولانی توی URL را کپی کنید — این **Deployment ID** شماست.
 
-> اگر `script.google.com` خودش بسته است، اول mhrv-f را در حالت `google_only` اجرا کنید (از [`config.google-only.example.json`](config.google-only.example.json) استفاده کنید). این حالت فقط سایت‌های گوگل را تونل می‌کند تا بتوانید به ویرایشگر Apps Script برسید. مرحلهٔ ۱ را در مرورگر انجام دهید و بعد به حالت معمولی برگردید.
+> اگر `script.google.com` خودش بسته است، اول mhrv-f را در حالت `direct` اجرا کنید (از [`config.direct.example.json`](config.direct.example.json) استفاده کنید). این حالت فقط سایت‌های گوگل را تونل می‌کند تا بتوانید به ویرایشگر Apps Script برسید. مرحلهٔ ۱ را در مرورگر انجام دهید و بعد به حالت معمولی برگردید.
 
 **۲. نصب و اجرای mhrv-f.**
 بستهٔ مخصوص سیستم خودتان را از [بخش Releases](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/releases/latest) دانلود کنید و از حالت فشرده در بیاورید.
@@ -195,4 +144,5 @@ Apps Script شما پاسخ نمی‌دهد. به <https://script.google.com> ب
 
 ### حمایت از پروژه
 
-این پروژه رایگان و توسط داوطلبان نگه‌داری می‌شود. اگر کمکتان کرد و چیزی از دستتان برمی‌آید: **[❤️ sh1n.org/donate](https://sh1n.org/donate)**
+این پروژه رایگان و توسط داوطلبان نگه‌داری می‌شود. اگر برایتان مفید بود، ستاره دادن به مخزن و گزارش باگ‌های دقیق کمک بزرگی است.
+

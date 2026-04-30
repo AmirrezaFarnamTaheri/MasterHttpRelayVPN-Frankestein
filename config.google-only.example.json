@@ -1,6 +1,6 @@
 {
   "config_version": 1,
-  "mode": "google_only",
+  "mode": "direct",
   "google_ip": "216.239.38.120",
   "front_domain": "www.google.com",
   "listen_host": "127.0.0.1",
@@ -16,6 +16,10 @@
   "range_parallelism": 12,
   "range_chunk_bytes": 262144,
   "relay_request_timeout_secs": 25,
+  "request_timeout_secs": 30,
+  "auto_blacklist_strikes": 3,
+  "auto_blacklist_window_secs": 30,
+  "auto_blacklist_cooldown_secs": 120,
   "outage_reset_enabled": true,
   "outage_reset_failure_threshold": 3,
   "outage_reset_window_ms": 5000,

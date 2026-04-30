@@ -1,38 +1,89 @@
-# Doctor (guided diagnostics)
+# Doctor - Guided Diagnostics
 
-`mhrv-f doctor` is a first-run assistant that checks the most common failure modes and prints actionable fixes.
+`mhrv-f doctor` checks the common first-run and daily-use failure modes and
+prints actionable fixes. It is available in the CLI and in the desktop UI.
 
-Run it any time you see:
-
-- `504 Relay timeout`
-- certificate errors (`NET::ERR_CERT_AUTHORITY_INVALID`)
-- “it worked yesterday, now it times out”
-- uncertainty about whether the relay is actually up
-
-## How to run
+## Run It
 
 ```bash
 ./mhrv-f doctor
 ```
 
-Or in the desktop UI:
+In the desktop UI, click **Doctor** and read the **Recent log** panel. Use
+**Doctor + Fix** for safe local fixes such as CA generation/install attempts.
 
-- Click **Doctor** (next to **Test relay**) and read the **Recent log** panel.
+## When to Use It
 
-## What it checks
+- `504 Relay timeout`
+- certificate errors such as `NET::ERR_CERT_AUTHORITY_INVALID`
+- a relay worked yesterday but now times out
+- `vercel_edge` returns HTML/protection pages instead of JSON
+- you are not sure whether the relay credentials are correct
+- you changed modes and want a sanity check
 
-- **Config warnings**: LAN-exposure guardrails, weak auth keys, `verify_ssl=false`, etc.
-- **Mode sanity**: `apps_script` / `google_only` / `full`.
-- **Apps Script pools**: checks that at least one enabled `account_groups` exists (when required).
-- **MITM CA readiness** (non-`full` modes): verifies the CA exists and appears trusted.
-- **End-to-end relay probe**: runs the same probe as `mhrv-f test` and classifies common failures.
+## What It Checks
 
-## Common fixes the doctor will suggest
+- **Config warnings**: weak auth keys, LAN exposure guardrails,
+  `verify_ssl=false`, serverless relay TLS verification warnings, and similar risky
+  settings.
+- **Mode sanity**: `apps_script`, `vercel_edge`, `direct`, or `full`.
+- **Apps Script pools**: enabled account groups and deployment counts when
+  Apps Script credentials are required.
+- **Serverless JSON config**: required `vercel.base_url`, `vercel.auth_key`,
+  and endpoint shape in `vercel_edge` mode.
+- **MITM CA readiness**: CA file generation and OS trust status for modes that
+  decrypt HTTPS locally.
+- **Relay probe**: the same JSON HTTP probe as `mhrv-f test` for `apps_script`
+  and `vercel_edge`.
 
-- **CA not trusted**: run `mhrv-f --install-cert` (as admin) or import `ca/ca.crt` into OS trust store.
-- **Relay probe fails**:
-  - verify `AUTH_KEY` matches between `config.json` and `Code.gs`
-  - replace dead deployment IDs (re-deploy a “New version” in Apps Script)
-  - scan a different `google_ip` / test the SNI pool
-  - add backup accounts/IDs when quota exhaustion is the cause
+## Common Fixes
 
+### CA Not Trusted
+
+Run:
+
+```bash
+./mhrv-f --install-cert
+```
+
+On Windows, run from an Administrator shell if the user store install is not
+enough. Firefox may need restart or NSS/enterprise-roots handling; the installer
+attempts this automatically where possible.
+
+### Apps Script Probe Fails
+
+Check:
+
+- `AUTH_KEY` in config matches `Code.gs`
+- deployment access is **Anyone**
+- deployment ID is current
+- your account has quota left
+- `google_ip` and `front_domain` still work from your network
+
+Useful commands:
+
+```bash
+./mhrv-f test-sni
+./mhrv-f scan-ips
+```
+
+### Serverless JSON Probe Fails
+
+Check:
+
+- `vercel.base_url` is the deployed app origin, for example
+  `https://your-project.vercel.app` or `https://your-site.netlify.app`
+- `vercel.relay_path` is usually `/api/api`
+- `vercel.auth_key` matches platform environment variable `AUTH_KEY`
+- the Vercel/Netlify project was redeployed after changing environment variables
+- Vercel Deployment Protection is disabled, or Netlify `/api/api` routes to the
+  Edge Function
+
+HTML responses usually mean platform auth/protection or a routing page is in
+front of the function. The native client expects JSON.
+
+### Full Mode
+
+Doctor does not use `mhrv-f test` as proof for `full` mode. Verify full mode by
+starting the tunnel, browsing through it, and checking that an IP-check page
+shows the tunnel-node public IP.

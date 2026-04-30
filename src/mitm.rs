@@ -115,6 +115,7 @@ impl MitmCertManager {
 
         std::fs::write(cert_path, cert_pem.as_bytes())?;
         std::fs::write(key_path, key_pem.as_bytes())?;
+        restrict_ca_key_permissions(key_path)?;
         tracing::warn!(
             "Generated new MITM CA at {} — install it as a trusted root CA",
             cert_path.display()
@@ -158,10 +159,16 @@ impl MitmCertManager {
         let mut dn = DistinguishedName::new();
         dn.push(DnType::CommonName, domain);
         params.distinguished_name = dn;
-        let dns_name = domain.try_into().map_err(|e: rcgen::Error| {
-            MitmError::Invalid(format!("bad dns name '{}': {}", domain, e))
-        })?;
-        params.subject_alt_names.push(SanType::DnsName(dns_name));
+        let san = match domain.parse::<std::net::IpAddr>() {
+            Ok(ip) => SanType::IpAddress(ip),
+            Err(_) => {
+                let dns_name = domain.try_into().map_err(|e: rcgen::Error| {
+                    MitmError::Invalid(format!("bad dns name '{}': {}", domain, e))
+                })?;
+                SanType::DnsName(dns_name)
+            }
+        };
+        params.subject_alt_names.push(san);
 
         // Modern browsers (Chrome/Firefox, all current versions) reject TLS
         // leaves that don't carry:
@@ -187,6 +194,20 @@ impl MitmCertManager {
         let leaf_key_der = leaf_key.serialize_der();
         Ok((leaf_der, leaf_key_der))
     }
+}
+
+#[cfg(unix)]
+fn restrict_ca_key_permissions(path: &Path) -> Result<(), std::io::Error> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o600);
+    std::fs::set_permissions(path, perms)
+}
+
+#[cfg(not(unix))]
+fn restrict_ca_key_permissions(_path: &Path) -> Result<(), std::io::Error> {
+    Ok(())
 }
 
 #[cfg(test)]
@@ -259,6 +280,47 @@ mod tests {
             .iter()
             .any(|n| matches!(n, GeneralName::DNSName(s) if *s == "example.com"));
         assert!(has_name, "leaf SAN must contain example.com");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn leaf_san_supports_ip_literals() {
+        use x509_parser::prelude::*;
+
+        init_crypto();
+        let tmp = tempdir();
+        let m = MitmCertManager::new_in(&tmp).unwrap();
+        let (leaf_der, _) = m.issue_leaf("127.0.0.1").unwrap();
+        let (_, parsed) = X509Certificate::from_der(&leaf_der).unwrap();
+        let san = parsed
+            .subject_alternative_name()
+            .expect("san extension lookup")
+            .expect("san extension present");
+        let has_ip = san
+            .value
+            .general_names
+            .iter()
+            .any(|n| matches!(n, GeneralName::IPAddress(bytes) if *bytes == [127, 0, 0, 1]));
+        assert!(has_ip, "leaf SAN must contain IPAddress 127.0.0.1");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn generated_ca_key_is_user_only_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+
+        init_crypto();
+        let tmp = tempdir();
+        let _ = MitmCertManager::new_in(&tmp).unwrap();
+        let mode = std::fs::metadata(tmp.join(CA_KEY_FILE))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

@@ -1,4 +1,4 @@
-//! `mhrv-f test` — end-to-end probe of the Apps Script relay.
+//! `mhrv-f test` — end-to-end probe of JSON HTTP relay modes.
 //!
 //! Sends one GET through the relay to api.ipify.org and verifies the
 //! response is a real IP-lookup response, not just any HTTP 200. Emits
@@ -7,31 +7,70 @@
 //! user gets actionable feedback when a test fails.
 //!
 //! The stricter PASS criteria (body-shape verification, not just status
-//! line) exists because Apps Script keeps deleted deployments serving for
-//! a grace period (observed up to ~15 min) and because some upstream
-//! failure modes come back 200 OK with an HTML error page inside. Without
-//! checking the body we'd report PASS on a dead deployment.
+//! line) exists because relay endpoints can return HTML error/protection pages
+//! with HTTP 200. Without checking the body we'd report PASS on a dead or
+//! protected deployment.
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::config::{Config, Mode};
 use crate::domain_fronter::DomainFronter;
+use crate::relay_transport::RelayTransport;
 
 const TEST_URL: &str = "https://api.ipify.org/?format=json";
 
 pub async fn run(config: &Config) -> bool {
-    if matches!(config.mode_kind(), Ok(Mode::GoogleOnly)) {
-        let msg = "`mhrv-f test` probes the Apps Script relay, which isn't \
-                   wired up in google_only mode. Run `mhrv-f test-sni` to \
-                   check the direct SNI-rewrite tunnel instead.";
+    let mode = match config.mode_kind() {
+        Ok(m) => m,
+        Err(e) => {
+            let msg = format!("FAIL: invalid mode: {e}");
+            println!("{}", msg);
+            tracing::error!("{}", msg);
+            return false;
+        }
+    };
+    if mode == Mode::Direct {
+        let msg = "`mhrv-f test` probes a JSON HTTP relay, which isn't \
+                   wired up in direct mode. Run `mhrv-f test-sni` to check \
+                   the SNI-rewrite tunnel instead.";
         println!("{}", msg);
         tracing::error!("{}", msg);
         return false;
     }
-    let fronter = match DomainFronter::new(config) {
-        Ok(f) => f,
+    if mode == Mode::Full {
+        let msg = "`mhrv-f test` only verifies the JSON HTTP relay used by \
+                   apps_script/vercel_edge modes. In full mode, verify end-to-end \
+                   by starting the proxy/VPN and browsing through the tunnel, then \
+                   compare an IP-check page with the tunnel-node public IP.";
+        println!("{}", msg);
+        tracing::error!("{}", msg);
+        return false;
+    }
+
+    let apps_script = if mode == Mode::AppsScript {
+        match DomainFronter::new(config) {
+            Ok(f) => Some(Arc::new(f)),
+            Err(e) => {
+                let msg = format!("FAIL: could not create Apps Script fronter: {}", e);
+                println!("{}", msg);
+                tracing::error!("{}", msg);
+                return false;
+            }
+        }
+    } else {
+        None
+    };
+    let relay = match RelayTransport::new(config, apps_script) {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            let msg = "FAIL: this mode has no JSON relay transport to test.".to_string();
+            println!("{}", msg);
+            tracing::error!("{}", msg);
+            return false;
+        }
         Err(e) => {
-            let msg = format!("FAIL: could not create fronter: {}", e);
+            let msg = format!("FAIL: could not create relay transport: {}", e);
             println!("{}", msg);
             tracing::error!("{}", msg);
             return false;
@@ -39,19 +78,28 @@ pub async fn run(config: &Config) -> bool {
     };
 
     println!("Probing relay end-to-end...");
-    println!("  front_domain : {}", config.front_domain);
-    println!("  google_ip    : {}", config.google_ip);
+    match mode {
+        Mode::AppsScript => {
+            println!("  transport    : Apps Script");
+            println!("  front_domain : {}", config.front_domain);
+            println!("  google_ip    : {}", config.google_ip);
+        }
+        Mode::VercelEdge => {
+            println!("  transport    : Serverless JSON");
+            println!(
+                "  endpoint     : {}{}",
+                config.vercel.base_url.trim_end_matches('/'),
+                config.vercel.relay_path
+            );
+        }
+        Mode::Direct | Mode::Full => {}
+    }
     println!("  test URL     : {}", TEST_URL);
     println!();
-    tracing::info!(
-        "test: probing {} via SNI={} @ {}",
-        TEST_URL,
-        config.front_domain,
-        config.google_ip
-    );
+    tracing::info!("test: probing {} via {} relay", TEST_URL, relay.label());
 
     let t0 = Instant::now();
-    let resp = fronter.relay("GET", TEST_URL, &[], &[]).await;
+    let resp = relay.relay("GET", TEST_URL, &[], &[]).await;
     let elapsed = t0.elapsed();
 
     let resp_str = String::from_utf8_lossy(&resp);
@@ -80,7 +128,7 @@ pub async fn run(config: &Config) -> bool {
 
     if !status_line.contains("200 OK") {
         let verdict = if status_line.contains("502") || status_line.contains("504") {
-            "FAIL (gateway error). Likely: wrong Apps Script ID, bad AUTH_KEY, quota hit, or Google edge unreachable."
+            "FAIL (gateway error). Likely: wrong relay URL/deployment ID, bad AUTH_KEY, quota hit, protection page, or upstream edge unreachable."
         } else {
             "FAIL (unexpected status)."
         };
@@ -123,8 +171,8 @@ pub async fn run(config: &Config) -> bool {
                 || body_trunc.to_ascii_lowercase().contains("sign in")
                 || body_trunc.to_ascii_lowercase().contains("moved");
             let reason = if html_signature {
-                "HTML returned instead of JSON. The Apps Script deployment may be deleted, \
-                 not published to 'Anyone', or requires sign-in."
+                "HTML returned instead of JSON. The relay deployment may be deleted, \
+                 protected by sign-in/platform protection, misrouted, or not published for public access."
             } else {
                 "Non-JSON body returned."
             };

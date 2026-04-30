@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "name": "mhrv-f-vercel-json-relay",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/api" }],
+  "trailingSlash": false
+}

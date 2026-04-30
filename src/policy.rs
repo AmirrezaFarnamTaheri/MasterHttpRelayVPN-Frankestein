@@ -49,7 +49,7 @@ pub fn decide_route(
     if matches_sni_rewrite {
         return RouteDecision::SniRewrite;
     }
-    if mode == Mode::GoogleOnly {
+    if mode == Mode::Direct {
         // No relay available; everything else is passthrough.
         let _ = (host, port, youtube_via_relay);
         return RouteDecision::Passthrough;

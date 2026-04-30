@@ -1,10 +1,10 @@
-//! JNI entry points for the Android app.
+﻿//! JNI entry points for the Android app.
 //!
 //! The app (Kotlin) calls `Native.setDataDir()` once, then `Native.startProxy()`
 //! with the full config.json payload and gets back a handle (u64). Later the
-//! app calls `stopProxy(handle)` to stop, `drainLogs()` to poll logs, or
-//! `exportCa(dest)` to copy the MITM CA cert to a path the app can hand to
-//! Android's system "install certificate" dialog.
+//! app calls `stopProxy(handle)` to stop, `statsJson(handle)` to poll,
+//! `drainLogs()` to poll logs, or `exportCa(dest)` to copy the MITM CA cert
+//! to a path the app can hand to Android's system "install certificate" dialog.
 //!
 //! The proxy runs on an internal tokio runtime that we own (1 worker thread
 //! minimum) — we don't piggyback on the JVM thread that calls in.
@@ -40,6 +40,9 @@ struct Running {
     shutdown: Option<oneshot::Sender<()>>,
     /// Own the runtime so it outlives the server. Dropped last.
     rt: Option<Runtime>,
+    /// Keep an Arc to the DomainFronter so `statsJson(handle)` can read live
+    /// counters without cross-task plumbing. `None` for modes without one.
+    fronter: Option<Arc<crate::domain_fronter::DomainFronter>>,
 }
 
 static HANDLE_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -171,7 +174,7 @@ fn one_shot_runtime() -> Option<Runtime> {
 /// `Native.setDataDir(String)` — must be called once, before `startProxy`.
 /// The Kotlin side passes `context.filesDir.absolutePath`.
 #[no_mangle]
-pub extern "system" fn Java_com_therealaleph_mhrv_Native_setDataDir(
+pub extern "system" fn Java_com_farnam_mhrvf_Native_setDataDir(
     mut env: JNIEnv,
     _class: JClass,
     path: JString,
@@ -192,7 +195,7 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_setDataDir(
 /// The config is parsed and validated; on success the proxy server is
 /// spawned on its own tokio runtime and a non-zero handle returned.
 #[no_mangle]
-pub extern "system" fn Java_com_therealaleph_mhrv_Native_startProxy(
+pub extern "system" fn Java_com_farnam_mhrvf_Native_startProxy(
     mut env: JNIEnv,
     _class: JClass,
     config_json: JString,
@@ -243,6 +246,7 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_startProxy(
                     return 0i64;
                 }
             };
+            let fronter = server.fronter();
 
             let (tx, rx) = oneshot::channel::<()>();
 
@@ -258,6 +262,7 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_startProxy(
                 Running {
                     shutdown: Some(tx),
                     rt: Some(rt),
+                    fronter,
                 },
             );
             handle as jlong
@@ -277,7 +282,7 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_startProxy(
 /// unwind; anything slower, we force-kill (the listener socket is released
 /// as part of the forced shutdown).
 #[no_mangle]
-pub extern "system" fn Java_com_therealaleph_mhrv_Native_stopProxy(
+pub extern "system" fn Java_com_farnam_mhrvf_Native_stopProxy(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -315,7 +320,7 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_stopProxy(
 /// public cert to the given path. Init-safe: creates the CA on first call
 /// if it doesn't exist yet.
 #[no_mangle]
-pub extern "system" fn Java_com_therealaleph_mhrv_Native_exportCa(
+pub extern "system" fn Java_com_farnam_mhrvf_Native_exportCa(
     mut env: JNIEnv,
     _class: JClass,
     dest: JString,
@@ -346,7 +351,7 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_exportCa(
 
 /// `Native.version()` -> String. Trivial smoke test for the JNI linkage.
 #[no_mangle]
-pub extern "system" fn Java_com_therealaleph_mhrv_Native_version<'a>(
+pub extern "system" fn Java_com_farnam_mhrvf_Native_version<'a>(
     env: JNIEnv<'a>,
     _class: JClass,
 ) -> jstring {
@@ -361,7 +366,7 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_version<'a>(
 /// array because it's one JNI call vs. N — the Kotlin side splits on `\n`
 /// for display. Empty string when there's nothing to read.
 #[no_mangle]
-pub extern "system" fn Java_com_therealaleph_mhrv_Native_drainLogs<'a>(
+pub extern "system" fn Java_com_farnam_mhrvf_Native_drainLogs<'a>(
     env: JNIEnv<'a>,
     _class: JClass,
 ) -> jstring {
@@ -393,7 +398,7 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_drainLogs<'a>(
 ///
 /// Blocking — hit from a background dispatcher.
 #[no_mangle]
-pub extern "system" fn Java_com_therealaleph_mhrv_Native_checkUpdate<'a>(
+pub extern "system" fn Java_com_farnam_mhrvf_Native_checkUpdate<'a>(
     env: JNIEnv<'a>,
     _class: JClass,
 ) -> jstring {
@@ -453,7 +458,7 @@ fn update_check_to_json(u: &crate::update_check::UpdateCheck) -> String {
 /// like `{"ok":true,"latencyMs":123}` or `{"ok":false,"error":"..."}`.
 /// Blocking call — Kotlin side should invoke on a background coroutine.
 #[no_mangle]
-pub extern "system" fn Java_com_therealaleph_mhrv_Native_testSni<'a>(
+pub extern "system" fn Java_com_farnam_mhrvf_Native_testSni<'a>(
     mut env: JNIEnv<'a>,
     _class: JClass,
     google_ip: JString,
@@ -492,6 +497,59 @@ pub extern "system" fn Java_com_therealaleph_mhrv_Native_testSni<'a>(
         }),
     );
     env.new_string(result_json)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// `Native.statsJson(long handle)` -> String. Returns a JSON blob with the
+/// live `StatsSnapshot` for a running proxy, or an empty string if the
+/// handle is unknown or the active mode has no Apps Script fronter.
+#[no_mangle]
+pub extern "system" fn Java_com_farnam_mhrvf_Native_statsJson<'a>(
+    env: JNIEnv<'a>,
+    _class: JClass,
+    handle: jlong,
+) -> jstring {
+    let out = safe(
+        String::new(),
+        AssertUnwindSafe(|| {
+            let map = match slot_map().lock() {
+                Ok(g) => g,
+                Err(_) => return String::new(),
+            };
+            let Some(running) = map.get(&(handle as u64)) else {
+                return String::new();
+            };
+            let Some(fronter) = running.fronter.as_ref() else {
+                return String::new();
+            };
+            let s = fronter.snapshot_stats();
+            let degrade_reason = std::str::from_utf8(&s.degrade_reason)
+                .unwrap_or("")
+                .trim_matches(char::from(0))
+                .trim();
+            serde_json::json!({
+                "relay_calls": s.relay_calls,
+                "relay_failures": s.relay_failures,
+                "coalesced": s.coalesced,
+                "bytes_relayed": s.bytes_relayed,
+                "cache_hits": s.cache_hits,
+                "cache_misses": s.cache_misses,
+                "cache_bytes": s.cache_bytes,
+                "blacklisted_scripts": s.blacklisted_scripts,
+                "total_scripts": s.total_scripts,
+                "scripts_blacklisted": s.blacklisted_scripts,
+                "scripts_total": s.total_scripts,
+                "today_calls": s.today_calls,
+                "today_bytes": s.today_bytes,
+                "today_reset_secs": s.today_reset_secs,
+                "degrade_level": s.degrade_level,
+                "degrade_reason": degrade_reason,
+            })
+            .to_string()
+        }),
+    );
+    env.new_string(out)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())
 }

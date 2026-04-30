@@ -26,7 +26,7 @@ required-features = ["ui"]
 
 [features]
 default = []
-ui = ["dep:eframe"]
+ui = ["dep:eframe", "dep:reqwest", "dep:zip"]
 
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "io-util", "signal", "sync"] }
@@ -74,6 +74,8 @@ eframe = { version = "0.28", default-features = false, features = [
     "wgpu",
     "persistence",
 ], optional = true }
+reqwest = { version = "0.12", default-features = false, optional = true, features = ["json", "blocking", "rustls-tls"] }
+zip = { version = "2", default-features = false, optional = true, features = ["deflate"] }
 url = "2.5.8"
 
 # Unix-only deps. Must come after `[dependencies]` because starting a new
@@ -96,7 +98,12 @@ libc = "0.2"
 # traffic black-holes (symptom: Chrome shows DNS_PROBE_STARTED).
 [target.'cfg(target_os = "android")'.dependencies]
 jni = { version = "0.21", default-features = false }
-tun2proxy = { version = "0.7", default-features = false }
+tun2proxy = { version = "0.7", default-features = false, features = ["udpgw"] }
+
+# Temporary patch: adds udpgw_server parameter to the Android JNI `run()`
+# function. Remove once tun2proxy >= 0.8 ships with that signature.
+[patch.crates-io]
+tun2proxy = { git = "https://github.com/yyoyoian-pixel/tun2proxy", branch = "feat/udpgw-jni-param" }
 
 [dev-dependencies]
 # Used in mitm tests to sanity-check the cert extensions we emit.

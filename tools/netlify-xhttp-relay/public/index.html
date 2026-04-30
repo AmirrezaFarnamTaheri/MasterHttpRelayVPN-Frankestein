@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Netlify XHTTP Relay</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f8fb;
+        color: #151922;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+      }
+      main {
+        max-width: 720px;
+        width: 100%;
+        border: 1px solid #d7dce5;
+        border-radius: 8px;
+        padding: 28px;
+        background: #ffffff;
+        box-shadow: 0 12px 34px rgba(20, 31, 46, 0.08);
+      }
+      h1 { margin: 0 0 12px; font-size: 28px; }
+      p { line-height: 1.6; color: #465365; }
+      a { color: #0969da; font-weight: 650; }
+      code { background: #eef2f7; padding: 2px 6px; border-radius: 5px; }
+      @media (prefers-color-scheme: dark) {
+        :root { background: #0f141c; color: #eef2f7; }
+        main { background: #151b25; border-color: #2a3443; }
+        p { color: #b8c2d1; }
+        code { background: #222b38; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Netlify XHTTP Relay</h1>
+      <p>This deployment forwards XHTTP traffic from <code>/p4r34m</code> to the backend configured in <code>TARGET_DOMAIN</code>.</p>
+      <p>Use the bundled <a href="/vless-generator.html">XHTTP VLESS generator</a> to create share links for tested Netlify candidates. The same page also has a Vercel preset for people migrating profiles between the two helpers.</p>
+    </main>
+  </body>
+</html>

@@ -6,6 +6,8 @@
  *   2. Batch relay:   POST { k, q: [{m,u,h,b,ct,r}, ...] }    → { q: [{s,h,b}, ...] }
  *   3. Tunnel:        POST { k, t, h, p, sid, d }              → { sid, d, eof }
  *   4. Tunnel batch:  POST { k, t:"batch", ops:[...] }         → { r: [...] }
+ *      Batch ops include TCP (`connect`, `connect_data`, `data`) and UDP
+ *      (`udp_open`, `udp_data`) tunnel-node operations.
  *
  * CHANGE THESE TO YOUR OWN VALUES!
  */
@@ -13,6 +15,42 @@
 const AUTH_KEY = "CHANGE_ME_TO_A_STRONG_SECRET";
 const TUNNEL_SERVER_URL = "https://YOUR_TUNNEL_NODE_URL";
 const TUNNEL_AUTH_KEY = "YOUR_TUNNEL_AUTH_KEY";
+
+// Set true only while debugging setup/auth mismatches. In normal production,
+// unauthorized or malformed probe-shaped requests get a harmless HTML decoy
+// instead of proxy-shaped JSON.
+const DIAGNOSTIC_MODE = false;
+
+const DECOY_HTML =
+  '<!DOCTYPE html><html><head><title>Web App</title></head>' +
+  "<body><p>The script completed but did not return anything.</p>" +
+  "</body></html>";
+
+function _decoyOrError(jsonBody) {
+  if (DIAGNOSTIC_MODE) return _json(jsonBody);
+  return ContentService
+    .createTextOutput(DECOY_HTML)
+    .setMimeType(ContentService.MimeType.HTML);
+}
+
+// Edge DNS cache for Full mode. UDP/53 queries normally travel:
+// client -> Apps Script -> tunnel-node -> resolver. That first-hop DNS
+// round-trip is expensive. When enabled, _doTunnelBatch serves udp_open
+// port=53 ops from CacheService or DoH inside Google's network. Any parser,
+// cache, or resolver failure returns null and falls through to the existing
+// tunnel-node path, so failure is non-regressing.
+const ENABLE_EDGE_DNS_CACHE = true;
+const EDGE_DNS_RESOLVERS = [
+  "https://1.1.1.1/dns-query",
+  "https://dns.google/dns-query",
+  "https://dns.quad9.net/dns-query",
+];
+const EDGE_DNS_MIN_TTL_S = 30;
+const EDGE_DNS_MAX_TTL_S = 21600; // CacheService ceiling: 6 hours.
+const EDGE_DNS_NEG_TTL_S = 45;
+const EDGE_DNS_CACHE_PREFIX = "edns:";
+const EDGE_DNS_MAX_KEY_LEN = 240;
+const EDGE_DNS_REFUSE_QTYPES = { 255: 1 }; // ANY.
 
 // Optional Telegram usage notifications (OFF by default). See Code.gs for docs.
 const ENABLE_TELEGRAM_USAGE = false;
@@ -22,7 +60,9 @@ const TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE";
 const DAILY_EXECUTION_LIMIT = 20000;
 const WARNING_THRESHOLDS = [0.5, 0.75, 0.9, 0.95, 0.99];
 
-// Header forwarding policy: allowlist + explicit blocklist.
+// Header forwarding policy: allowlist + explicit blocklist. User-Agent is
+// forwarded for browser compatibility; origin/referer and IP/proxy identity
+// headers remain blocked.
 const ALLOW_HEADERS = {
   accept: 1,
   "accept-language": 1,
@@ -31,6 +71,7 @@ const ALLOW_HEADERS = {
   pragma: 1,
   authorization: 1,
   cookie: 1,
+  "user-agent": 1,
   range: 1,
   "if-match": 1,
   "if-none-match": 1,
@@ -52,7 +93,6 @@ const SKIP_HEADERS = {
   "priority": 1, te: 1,
   origin: 1,
   referer: 1,
-  "user-agent": 1,
   // Privacy: never forward client IP hints. If these leak upstream,
   // sanctions blocks and fingerprinting get easier.
   forwarded: 1,
@@ -178,7 +218,7 @@ function checkUsageAndNotify() {
 function doPost(e) {
   try {
     var req = JSON.parse(e.postData.contents);
-    if (req.k !== AUTH_KEY) return _json({ e: "unauthorized" });
+    if (req.k !== AUTH_KEY) return _decoyOrError({ e: "unauthorized" });
 
     // Tunnel mode
     if (req.t) return _doTunnel(req);
@@ -193,7 +233,7 @@ function doPost(e) {
     _updateUsage("single", 1);
     return _doSingle(req);
   } catch (err) {
-    return _json({ e: String(err) });
+    return _decoyOrError({ e: String(err) });
   }
 }
 
@@ -240,7 +280,9 @@ function _doTunnel(req) {
     contentType: "application/json",
     payload: JSON.stringify(payload),
     muteHttpExceptions: true,
-    followRedirects: true,
+    // Tunnel payloads include the tunnel auth key. A wrong URL should fail
+    // loudly instead of following a redirect and forwarding secrets elsewhere.
+    followRedirects: false,
   });
 
   if (resp.getResponseCode() !== 200) {
@@ -253,17 +295,51 @@ function _doTunnel(req) {
 
 // Batch tunnel: forward all ops in one request to /tunnel/batch
 function _doTunnelBatch(req) {
-  var payload = {
-    k: TUNNEL_AUTH_KEY,
-    ops: req.ops || [],
-  };
+  var ops = (req && req.ops) || [];
+  if (!ENABLE_EDGE_DNS_CACHE) {
+    return _doTunnelBatchForward(ops);
+  }
 
+  var results = new Array(ops.length);
+  var forwardOps = [];
+  var forwardIdx = [];
+  for (var i = 0; i < ops.length; i++) {
+    var op = ops[i];
+    if (op && op.op === "udp_open" && op.port === 53 && op.d) {
+      var synth = _edgeDnsTry(op);
+      if (synth) {
+        results[i] = synth;
+        continue;
+      }
+    }
+    forwardOps.push(op);
+    forwardIdx.push(i);
+  }
+
+  if (forwardOps.length === 0) {
+    return _json({ r: results });
+  }
+  if (forwardOps.length === ops.length) {
+    return _doTunnelBatchForward(ops);
+  }
+
+  var resp = _doTunnelBatchFetch(forwardOps);
+  if (resp.error) return _json({ e: resp.error });
+  if (resp.r.length !== forwardOps.length) {
+    return _json({ e: "tunnel batch length mismatch" });
+  }
+  return _json({ r: _spliceTunnelResults(forwardIdx, resp.r, results) });
+}
+
+function _doTunnelBatchForward(ops) {
   var resp = UrlFetchApp.fetch(TUNNEL_SERVER_URL + "/tunnel/batch", {
     method: "post",
     contentType: "application/json",
-    payload: JSON.stringify(payload),
+    payload: JSON.stringify({ k: TUNNEL_AUTH_KEY, ops: ops }),
     muteHttpExceptions: true,
-    followRedirects: true,
+    // Tunnel payloads include the tunnel auth key. A wrong URL should fail
+    // loudly instead of following a redirect and forwarding secrets elsewhere.
+    followRedirects: false,
   });
 
   if (resp.getResponseCode() !== 200) {
@@ -272,6 +348,32 @@ function _doTunnelBatch(req) {
 
   return ContentService.createTextOutput(resp.getContentText())
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function _doTunnelBatchFetch(ops) {
+  var resp = UrlFetchApp.fetch(TUNNEL_SERVER_URL + "/tunnel/batch", {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify({ k: TUNNEL_AUTH_KEY, ops: ops }),
+    muteHttpExceptions: true,
+    followRedirects: false,
+  });
+  if (resp.getResponseCode() !== 200) {
+    return { error: "tunnel batch HTTP " + resp.getResponseCode() };
+  }
+  try {
+    var parsed = JSON.parse(resp.getContentText());
+    return { r: (parsed && parsed.r) || [] };
+  } catch (_err) {
+    return { error: "tunnel batch parse error" };
+  }
+}
+
+function _spliceTunnelResults(forwardIdx, forwardedResults, allResults) {
+  for (var j = 0; j < forwardIdx.length; j++) {
+    allResults[forwardIdx[j]] = forwardedResults[j];
+  }
+  return allResults;
 }
 
 // ========================== HTTP relay mode ==========================
@@ -359,16 +461,175 @@ function _respHeaders(resp) {
 }
 
 function doGet(e) {
-  return HtmlService.createHtmlOutput(
-    "<!DOCTYPE html><html><head><title>My App</title></head>" +
-      '<body style="font-family:sans-serif;max-width:600px;margin:40px auto">' +
-      "<h1>Welcome</h1><p>This application is running normally.</p>" +
-      "</body></html>"
-  );
+  return ContentService
+    .createTextOutput(DECOY_HTML)
+    .setMimeType(ContentService.MimeType.HTML);
 }
 
 function _json(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(
     ContentService.MimeType.JSON
   );
+}
+
+// ========================== Edge DNS helpers ==========================
+
+function _edgeDnsTry(op) {
+  try {
+    var bytes = Utilities.base64Decode(op.d);
+    if (!bytes || bytes.length < 12) return null;
+    var q = _dnsParseQuestion(bytes);
+    if (!q) return null;
+    if (EDGE_DNS_REFUSE_QTYPES[q.qtype]) return null;
+    var key = EDGE_DNS_CACHE_PREFIX + q.qtype + ":" + q.qname;
+    if (key.length > EDGE_DNS_MAX_KEY_LEN) return null;
+
+    var cache = CacheService.getScriptCache();
+    var stored = null;
+    try { stored = cache.get(key); } catch (_e) {}
+    if (stored) {
+      try {
+        var hit = Utilities.base64Decode(stored);
+        if (hit && hit.length >= 12) {
+          return {
+            sid: "edns-cache",
+            pkts: [Utilities.base64Encode(_dnsRewriteTxid(hit, q.txid))],
+            eof: true,
+          };
+        }
+      } catch (_badCache) {}
+    }
+
+    for (var i = 0; i < EDGE_DNS_RESOLVERS.length; i++) {
+      var reply = _edgeDnsDoh(EDGE_DNS_RESOLVERS[i], bytes);
+      if (!reply) continue;
+      var rcode = reply[3] & 0x0F;
+      var ttl;
+      if (rcode === 2 || rcode === 3) {
+        ttl = EDGE_DNS_NEG_TTL_S;
+      } else {
+        var minTtl = _dnsMinTtl(reply);
+        ttl = (minTtl === null) ? EDGE_DNS_NEG_TTL_S : minTtl;
+        if (ttl < EDGE_DNS_MIN_TTL_S) ttl = EDGE_DNS_MIN_TTL_S;
+        if (ttl > EDGE_DNS_MAX_TTL_S) ttl = EDGE_DNS_MAX_TTL_S;
+      }
+      try {
+        cache.put(key, Utilities.base64Encode(reply), ttl);
+      } catch (_cachePut) {}
+      return {
+        sid: "edns-doh",
+        pkts: [Utilities.base64Encode(_dnsRewriteTxid(reply, q.txid))],
+        eof: true,
+      };
+    }
+    return null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function _edgeDnsDoh(url, queryBytes) {
+  try {
+    var dns = Utilities.base64EncodeWebSafe(queryBytes).replace(/=+$/, "");
+    var resp = UrlFetchApp.fetch(url + "?dns=" + dns, {
+      method: "get",
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: { accept: "application/dns-message" },
+    });
+    if (resp.getResponseCode() !== 200) return null;
+    var body = resp.getContent();
+    if (!body || body.length < 12) return null;
+    return body;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function _dnsParseQuestion(bytes) {
+  if (bytes.length < 12) return null;
+  var qdcount = ((bytes[4] & 0xFF) << 8) | (bytes[5] & 0xFF);
+  if (qdcount !== 1) return null;
+  var off = 12;
+  var labels = [];
+  var nameLen = 0;
+  while (off < bytes.length) {
+    var len = bytes[off] & 0xFF;
+    if (len === 0) { off++; break; }
+    if ((len & 0xC0) !== 0) return null;
+    if (len > 63) return null;
+    off++;
+    if (off + len > bytes.length) return null;
+    var label = "";
+    for (var i = 0; i < len; i++) {
+      var c = bytes[off + i] & 0xFF;
+      if (c >= 0x41 && c <= 0x5A) c += 0x20;
+      label += String.fromCharCode(c);
+    }
+    labels.push(label);
+    off += len;
+    nameLen += len + 1;
+    if (nameLen > 255) return null;
+  }
+  if (off + 4 > bytes.length) return null;
+  var qtype = ((bytes[off] & 0xFF) << 8) | (bytes[off + 1] & 0xFF);
+  return {
+    txid: ((bytes[0] & 0xFF) << 8) | (bytes[1] & 0xFF),
+    qname: labels.join("."),
+    qtype: qtype,
+  };
+}
+
+function _dnsMinTtl(bytes) {
+  if (bytes.length < 12) return null;
+  var qdcount = ((bytes[4] & 0xFF) << 8) | (bytes[5] & 0xFF);
+  var ancount = ((bytes[6] & 0xFF) << 8) | (bytes[7] & 0xFF);
+  var nscount = ((bytes[8] & 0xFF) << 8) | (bytes[9] & 0xFF);
+  var off = 12;
+  for (var q = 0; q < qdcount; q++) {
+    off = _dnsSkipName(bytes, off);
+    if (off < 0 || off + 4 > bytes.length) return null;
+    off += 4;
+  }
+  var min = null;
+  var rrTotal = ancount + nscount;
+  for (var r = 0; r < rrTotal; r++) {
+    off = _dnsSkipName(bytes, off);
+    if (off < 0 || off + 10 > bytes.length) return null;
+    var ttl = ((bytes[off + 4] & 0xFF) * 0x1000000)
+            + (((bytes[off + 5] & 0xFF) << 16)
+            |  ((bytes[off + 6] & 0xFF) << 8)
+            |   (bytes[off + 7] & 0xFF));
+    if (ttl < 0 || ttl > 0x7FFFFFFF) ttl = 0;
+    if (min === null || ttl < min) min = ttl;
+    var rdlen = ((bytes[off + 8] & 0xFF) << 8) | (bytes[off + 9] & 0xFF);
+    off += 10 + rdlen;
+    if (off > bytes.length) return null;
+  }
+  return min;
+}
+
+function _dnsSkipName(bytes, off) {
+  while (off < bytes.length) {
+    var len = bytes[off] & 0xFF;
+    if (len === 0) return off + 1;
+    if ((len & 0xC0) === 0xC0) {
+      if (off + 2 > bytes.length) return -1;
+      return off + 2;
+    }
+    if ((len & 0xC0) !== 0) return -1;
+    if (len > 63) return -1;
+    off += 1 + len;
+  }
+  return -1;
+}
+
+function _dnsRewriteTxid(bytes, txid) {
+  var out = [];
+  for (var i = 0; i < bytes.length; i++) out.push(bytes[i]);
+  var hi = (txid >> 8) & 0xFF;
+  var lo = txid & 0xFF;
+  out[0] = hi > 127 ? hi - 256 : hi;
+  out[1] = lo > 127 ? lo - 256 : lo;
+  return out;
 }

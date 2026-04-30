@@ -145,10 +145,6 @@ pub fn parse_ttl(raw_response: &[u8], url: &str) -> Option<Duration> {
     }
 
     let path_no_query = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
-    const STATIC_EXTS: &[&str] = &[
-        ".css", ".js", ".mjs", ".woff", ".woff2", ".ttf", ".otf", ".eot", ".png", ".jpg", ".jpeg",
-        ".gif", ".webp", ".svg", ".ico", ".avif", ".mp3", ".mp4", ".wasm", ".webm", ".ogg",
-    ];
     for ext in STATIC_EXTS {
         if path_no_query.ends_with(ext) {
             return Some(Duration::from_secs(3600));
@@ -175,8 +171,90 @@ pub fn is_cacheable_method(method: &str) -> bool {
     matches!(method.to_ascii_uppercase().as_str(), "GET" | "HEAD")
 }
 
-pub fn cache_key(method: &str, url: &str) -> String {
-    format!("{}:{}", method.to_ascii_uppercase(), url)
+const STATIC_EXTS: &[&str] = &[
+    ".css", ".js", ".mjs", ".woff", ".woff2", ".ttf", ".otf", ".eot", ".png", ".jpg", ".jpeg",
+    ".gif", ".webp", ".svg", ".ico", ".avif", ".mp3", ".mp4", ".wasm", ".webm", ".ogg",
+];
+
+const STATEFUL_HEADER_NAMES: &[&str] = &[
+    "cookie",
+    "authorization",
+    "proxy-authorization",
+    "origin",
+    "referer",
+    "if-none-match",
+    "if-modified-since",
+    "cache-control",
+    "pragma",
+];
+
+const CACHE_VARY_HEADERS: &[&str] = &[
+    "accept",
+    "accept-language",
+    "user-agent",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+];
+
+pub fn is_stateful_request(
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: &[u8],
+) -> bool {
+    let method = method.to_ascii_uppercase();
+    if !matches!(method.as_str(), "GET" | "HEAD") || !body.is_empty() {
+        return true;
+    }
+
+    for name in STATEFUL_HEADER_NAMES {
+        if header_value(headers, name).is_some() {
+            return true;
+        }
+    }
+
+    let accept = header_value(headers, "accept")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if accept.contains("text/html") || accept.contains("application/json") {
+        return true;
+    }
+
+    let fetch_mode = header_value(headers, "sec-fetch-mode")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if matches!(fetch_mode.as_str(), "navigate" | "cors") {
+        return true;
+    }
+
+    !is_static_asset_url(url)
+}
+
+pub fn cache_key(method: &str, url: &str, headers: &[(String, String)]) -> String {
+    let mut key = format!("{}:{}", method.to_ascii_uppercase(), url);
+    for name in CACHE_VARY_HEADERS {
+        if let Some(value) = header_value(headers, name) {
+            key.push('\n');
+            key.push_str(name);
+            key.push('=');
+            key.push_str(value);
+        }
+    }
+    key
+}
+
+fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.as_str())
+        .filter(|v| !v.is_empty())
+}
+
+fn is_static_asset_url(url: &str) -> bool {
+    let path = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    STATIC_EXTS.iter().any(|ext| path.ends_with(ext))
 }
 
 #[cfg(test)]
@@ -238,6 +316,43 @@ mod tests {
         );
         let ttl = parse_ttl(&raw, "http://example.com/page").unwrap();
         assert_eq!(ttl, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn stateful_requests_are_not_cache_coalesced() {
+        let headers = vec![("Cookie".to_string(), "sid=abc".to_string())];
+        assert!(is_stateful_request(
+            "GET",
+            "https://example.com/app.js",
+            &headers,
+            &[]
+        ));
+
+        let headers = vec![("Accept".to_string(), "text/html".to_string())];
+        assert!(is_stateful_request(
+            "GET",
+            "https://example.com/index.html",
+            &headers,
+            &[]
+        ));
+
+        let headers = vec![("Accept".to_string(), "text/css".to_string())];
+        assert!(!is_stateful_request(
+            "GET",
+            "https://example.com/site.css?v=1",
+            &headers,
+            &[]
+        ));
+    }
+
+    #[test]
+    fn cache_key_varies_on_browser_headers() {
+        let a = vec![("Accept-Language".to_string(), "en-US".to_string())];
+        let b = vec![("Accept-Language".to_string(), "fa-IR".to_string())];
+        assert_ne!(
+            cache_key("GET", "https://example.com/app.js", &a),
+            cache_key("GET", "https://example.com/app.js", &b)
+        );
     }
 
     #[test]

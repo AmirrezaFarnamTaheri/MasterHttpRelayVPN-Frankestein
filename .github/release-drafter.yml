@@ -1,0 +1,41 @@
+# release-drafter config — accumulates merged PR titles into a draft GitHub
+# Release tagged `next`, so docs/changelog/v<ver>.md can be prefilled before a tag.
+name-template: 'Next release (draft)'
+tag-template: 'next'
+
+change-template: '• $TITLE ([#$NUMBER]($URL)): <expand>. Thanks @$AUTHOR'
+change-title-escapes: '\<*_&'
+no-changes-template: '_(no PR-tracked changes since the last release)_'
+
+exclude-labels:
+  - 'release-prep'
+  - 'skip-changelog'
+
+autolabeler:
+  - label: 'release-prep'
+    title:
+      - '/^release:/i'
+  - label: 'type: feature'
+    title:
+      - '/^feat(\(.+\))?:/i'
+  - label: 'type: fix'
+    title:
+      - '/^fix(\(.+\))?:/i'
+  - label: 'type: chore'
+    title:
+      - '/^chore(\(.+\))?:/i'
+  - label: 'type: docs'
+    title:
+      - '/^docs?(\(.+\))?:/i'
+  - label: 'type: refactor'
+    title:
+      - '/^refactor(\(.+\))?:/i'
+  - label: 'type: perf'
+    title:
+      - '/^perf(\(.+\))?:/i'
+  - label: 'type: ci'
+    title:
+      - '/^ci(\(.+\))?:/i'
+
+template: |
+  $CHANGES

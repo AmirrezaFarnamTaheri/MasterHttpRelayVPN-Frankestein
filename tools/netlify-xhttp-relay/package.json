@@ -1,0 +1,8 @@
+{
+  "name": "netlify-xhttp-relay",
+  "version": "1.0.0",
+  "description": "Netlify Edge XHTTP relay for Xray/V2Ray backends",
+  "private": true,
+  "license": "MIT",
+  "type": "module"
+}

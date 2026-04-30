@@ -15,6 +15,9 @@ on:
 
 permissions:
   contents: write
+  # Required by the tunnel-docker job when it pushes the prebuilt
+  # tunnel-node image to GHCR with the workflow GITHUB_TOKEN.
+  packages: write
 
 # Runner strategy:
 #   - Linux + Android + mipsel:       self-hosted (mhrv-hetzner-*, Hetzner
@@ -68,6 +71,10 @@ jobs:
           - target: x86_64-pc-windows-gnu
             os: windows-latest
             name: mhrv-f-windows-amd64
+          # The old i686-pc-windows-msvc build path is intentionally not
+          # shipped: keeping Win7-era Rust/toolchain pins compatible with
+          # modern transitive crates is brittle, and the x86_64 GNU build
+          # covers normal Windows installs.
           - target: x86_64-unknown-linux-musl
             os: [self-hosted, linux, x64, mhrv-build]
             name: mhrv-f-linux-musl-amd64
@@ -300,6 +307,11 @@ jobs:
               fi
               ;;
           esac
+          cp README.md LICENSE dist/
+          cp -R docs dist/docs
+          cp -R tools dist/tools
+          mkdir -p dist/assets
+          cp -R assets/apps_script dist/assets/apps_script
 
       - name: Build macOS .app bundle
         if: runner.os == 'macOS'
@@ -321,23 +333,36 @@ jobs:
             Copy-Item target/${{ matrix.target }}/release/mhrv-f-ui.exe dist/mhrv-f-ui.exe
           }
           Copy-Item assets/launchers/run.bat dist/run.bat
+          Copy-Item assets/windows/install-mhrv-f.ps1 dist/install-mhrv-f.ps1
+          Copy-Item assets/windows/uninstall-mhrv-f.ps1 dist/uninstall-mhrv-f.ps1
+          Copy-Item README.md dist/README.md
+          Copy-Item LICENSE dist/LICENSE
+          Copy-Item docs dist/docs -Recurse
+          Copy-Item tools dist/tools -Recurse
+          New-Item -ItemType Directory -Force -Path dist/assets | Out-Null
+          Copy-Item assets/apps_script dist/assets/apps_script -Recurse
 
       - name: Make archive
         shell: bash
         run: |
           cd dist
+          COMMON_ITEMS="README.md LICENSE docs assets tools"
           case "${{ matrix.target }}" in
             *-pc-windows-*)
-              7z a -tzip "${{ matrix.name }}.zip" mhrv-f.exe mhrv-f-ui.exe run.bat
+              7z a -tzip "${{ matrix.name }}.zip" mhrv-f.exe mhrv-f-ui.exe run.bat install-mhrv-f.ps1 uninstall-mhrv-f.ps1 $COMMON_ITEMS
               ;;
             *-apple-darwin)
-              tar czf "${{ matrix.name }}.tar.gz" mhrv-f mhrv-f-ui run.sh run.command
+              tar czf "${{ matrix.name }}.tar.gz" mhrv-f mhrv-f-ui run.sh run.command $COMMON_ITEMS
               ;;
             *-linux-musl)
-              tar czf "${{ matrix.name }}.tar.gz" mhrv-f mhrv-f.init
+              tar czf "${{ matrix.name }}.tar.gz" mhrv-f mhrv-f.init $COMMON_ITEMS
               ;;
             *)
-              tar czf "${{ matrix.name }}.tar.gz" mhrv-f mhrv-f-ui run.sh 2>/dev/null || tar czf "${{ matrix.name }}.tar.gz" mhrv-f run.sh
+              if [ -f mhrv-f-ui ]; then
+                tar czf "${{ matrix.name }}.tar.gz" mhrv-f mhrv-f-ui run.sh $COMMON_ITEMS
+              else
+                tar czf "${{ matrix.name }}.tar.gz" mhrv-f run.sh $COMMON_ITEMS
+              fi
               ;;
           esac
 
@@ -410,28 +435,93 @@ jobs:
           chmod +x ./gradlew
           ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
-      - name: Rename APK with version
+      - name: Rename APKs with version
         working-directory: android
         run: |
           VER="${{ inputs.version || github.ref_name }}"
           VER="${VER#v}"
-          SRC="app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$SRC" ]; then
-            # Some AGP versions name it differently when the release config
-            # can't be auto-signed. Catch that up front with a clear error
-            # instead of a silent missing-artifact later.
-            echo "::error::expected $SRC to exist; actual outputs:"
+          mkdir -p ../dist
+
+          declare -A ABI_TO_OUTNAME=(
+            ["universal"]="mhrv-f-android-universal-v${VER}.apk"
+            ["arm64-v8a"]="mhrv-f-android-arm64-v8a-v${VER}.apk"
+            ["armeabi-v7a"]="mhrv-f-android-armeabi-v7a-v${VER}.apk"
+            ["x86_64"]="mhrv-f-android-x86_64-v${VER}.apk"
+            ["x86"]="mhrv-f-android-x86-v${VER}.apk"
+          )
+
+          missing=0
+          for abi in "${!ABI_TO_OUTNAME[@]}"; do
+            SRC="app/build/outputs/apk/release/app-${abi}-release.apk"
+            if [ -f "$SRC" ]; then
+              cp "$SRC" "../dist/${ABI_TO_OUTNAME[$abi]}"
+              ls -la "../dist/${ABI_TO_OUTNAME[$abi]}"
+            else
+              echo "::warning::missing expected APK: $SRC"
+              missing=$((missing + 1))
+            fi
+          done
+
+          if [ ! -f "../dist/mhrv-f-android-universal-v${VER}.apk" ]; then
+            echo "::error::universal APK missing; actual outputs:"
             find app/build/outputs/apk -type f -name '*.apk' -print
             exit 1
           fi
-          mkdir -p ../dist
-          cp "$SRC" "../dist/mhrv-f-android-universal-v${VER}.apk"
+          if [ "$missing" -gt 0 ]; then
+            echo "::warning::$missing per-ABI APK(s) missing; continuing with universal + whatever built"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: mhrv-f-android-universal
           path: dist/*.apk
           if-no-files-found: error
+
+  # Build and publish the full-tunnel helper image to GHCR. Full-mode users
+  # otherwise have to compile tunnel-node on a VPS, which is slow and memory
+  # hungry on the small boxes people commonly use for relays.
+  tunnel-docker:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        id: ver
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+          MINOR="${VER%.*}"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "minor=${MINOR}" >> "$GITHUB_OUTPUT"
+          echo "Building tunnel-node image for v${VER} (minor: ${MINOR})"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./tunnel-node
+          file: ./tunnel-node/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/mhrv-tunnel-node:${{ steps.ver.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/mhrv-tunnel-node:${{ steps.ver.outputs.minor }}
+            ${{ github.event_name == 'push' && format('ghcr.io/{0}/mhrv-tunnel-node:latest', github.repository_owner) || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # release + telegram: lightweight aggregation jobs kept on GH-hosted
   # ubuntu-latest. They only download artifacts and call APIs — no build
@@ -453,15 +543,46 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.apk' \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Compose release body
+        id: relbody
+        run: |
+          VER="${{ inputs.version || github.ref_name }}"
+          VER="${VER#v}"
+          CHANGELOG="docs/changelog/v${VER}.md"
+          if [ ! -f "$CHANGELOG" ]; then
+            echo "::warning::no changelog at $CHANGELOG; release body will fall back to generated notes only"
+            exit 0
+          fi
+          {
+            echo 'body<<__RELEASE_BODY_EOF__'
+            CHANGELOG_PATH="$CHANGELOG" python3 - <<'PY'
+          import os, re, pathlib
+          body = pathlib.Path(os.environ["CHANGELOG_PATH"]).read_text(encoding="utf-8")
+          print(re.sub(r"^\s*(?:<!--.*?-->\s*)+", "", body, count=1, flags=re.S), end="")
+          PY
+            echo
+            echo '__RELEASE_BODY_EOF__'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
           files: dist/*
+          body: ${{ steps.relbody.outputs.body }}
+          append_body: true
           generate_release_notes: true
 
   # Optional: notify Telegram with the CI-built Android APK. Long text uses
-  # `docs/RELEASE_NOTES.md` when TELEGRAM_INCLUDE_CHANGELOG=true.
+  # docs/changelog/v<tag>.md when present and TELEGRAM_INCLUDE_CHANGELOG=true.
   #
   # Two Telegram API calls:
   #   1. sendDocument — APK file + a short caption (Telegram caps
@@ -513,6 +634,10 @@ jobs:
           VER="${{ inputs.version || github.ref_name }}"
           VER="${VER#v}"
           APK="apk/mhrv-f-android-universal-v${VER}.apk"
+          CHANGELOG="docs/changelog/v${VER}.md"
+          if [ ! -f "$CHANGELOG" ]; then
+            CHANGELOG="docs/RELEASE_NOTES.md"
+          fi
 
           if [ -z "${BOT_TOKEN:-}" ] || [ -z "${CHAT_ID:-}" ]; then
             echo "::notice::TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set, skipping Telegram post"
@@ -538,5 +663,5 @@ jobs:
             --apk "$APK" \
             --version "$VER" \
             --repo "$GITHUB_REPOSITORY" \
-            --changelog "docs/RELEASE_NOTES.md" \
+            --changelog "$CHANGELOG" \
             $INCLUDE_CHANGELOG_FLAG

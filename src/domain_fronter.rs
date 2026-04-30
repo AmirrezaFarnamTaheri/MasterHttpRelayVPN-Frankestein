@@ -180,6 +180,10 @@ pub struct DomainFronter {
     /// per request and return first success. `<= 1` = off.
     parallel_relay: usize,
     request_timeout: Duration,
+    batch_timeout: Duration,
+    auto_blacklist_strikes: u32,
+    auto_blacklist_window: Duration,
+    auto_blacklist_cooldown: Duration,
     range_chunk_bytes: u64,
     range_parallelism: usize,
     // Dynamic degradation (failure-intelligent fallback).
@@ -198,6 +202,7 @@ pub struct DomainFronter {
     inflight: Arc<Mutex<HashMap<String, broadcast::Sender<Vec<u8>>>>>,
     coalesced: AtomicU64,
     blacklist: Arc<std::sync::Mutex<HashMap<String, BlacklistEntry>>>,
+    tunnel_timeout_strikes: Arc<std::sync::Mutex<HashMap<String, (Instant, u32)>>>,
     outage_reset: OutageResetTracker,
     relay_calls: AtomicU64,
     relay_failures: AtomicU64,
@@ -227,10 +232,12 @@ struct DegradeState {
 #[derive(Clone, Debug)]
 struct BlacklistEntry {
     until: Instant,
+    reason: String,
 }
 
 #[derive(Clone)]
 struct AccountPool {
+    label: Option<String>,
     auth_key: String,
     script_ids: Vec<String>,
     weight: u8,
@@ -294,6 +301,9 @@ pub struct TunnelResponse {
     pub sid: Option<String>,
     #[serde(default)]
     pub d: Option<String>,
+    /// Optional UDP packet batch (base64), when the tunnel node returns `pkts`.
+    #[serde(default)]
+    pub pkts: Option<Vec<String>>,
     #[serde(default)]
     pub eof: Option<bool>,
     #[serde(default)]
@@ -339,6 +349,7 @@ impl DomainFronter {
                 continue;
             }
             accounts.push(AccountPool {
+                label: g.label,
                 auth_key: g.auth_key,
                 script_ids: ids,
                 weight: g.weight.max(1),
@@ -377,6 +388,14 @@ impl DomainFronter {
             http_host: "script.google.com",
             parallel_relay,
             request_timeout,
+            batch_timeout: Duration::from_secs(config.effective_batch_request_timeout_secs()),
+            auto_blacklist_strikes: config.effective_auto_blacklist_strikes(),
+            auto_blacklist_window: Duration::from_secs(
+                config.effective_auto_blacklist_window_secs(),
+            ),
+            auto_blacklist_cooldown: Duration::from_secs(
+                config.effective_auto_blacklist_cooldown_secs(),
+            ),
             range_chunk_bytes,
             range_parallelism,
             degrade: Arc::new(std::sync::Mutex::new(DegradeState {
@@ -395,6 +414,7 @@ impl DomainFronter {
             inflight: Arc::new(Mutex::new(HashMap::new())),
             coalesced: AtomicU64::new(0),
             blacklist: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            tunnel_timeout_strikes: Arc::new(std::sync::Mutex::new(HashMap::new())),
             outage_reset: OutageResetTracker::new(config),
             relay_calls: AtomicU64::new(0),
             relay_failures: AtomicU64::new(0),
@@ -523,6 +543,10 @@ impl DomainFronter {
         self.coalesced.load(Ordering::Relaxed)
     }
 
+    pub(crate) fn batch_timeout(&self) -> Duration {
+        self.batch_timeout
+    }
+
     fn next_account_index(&self) -> usize {
         // Weighted round-robin by expanding the selection space. This is
         // simple and good enough for small pool counts.
@@ -545,6 +569,7 @@ impl DomainFronter {
         // Returns (auth_key, script_id)
         let ai = self.next_account_index();
         let acct = &self.accounts[ai];
+        let account_label = acct.label.as_deref().unwrap_or("default");
         let n = acct.script_ids.len();
         let mut bl = self.blacklist.lock().unwrap();
         let now = Instant::now();
@@ -553,12 +578,27 @@ impl DomainFronter {
         for _ in 0..n {
             let idx = acct.script_idx.fetch_add(1, Ordering::Relaxed);
             let sid = &acct.script_ids[idx % n];
-            if !bl.contains_key(sid) {
+            if let Some(ent) = bl.get(sid) {
+                tracing::debug!(
+                    "skipping blacklisted script {} in account pool '{}' ({}s left): {}",
+                    mask_script_id(sid),
+                    account_label,
+                    ent.until.saturating_duration_since(now).as_secs(),
+                    ent.reason
+                );
+            } else {
                 return (acct.auth_key.clone(), sid.clone());
             }
         }
         // All blacklisted: pick whichever comes off cooldown soonest.
-        if let Some((sid, _)) = bl.iter().min_by_key(|(_, t)| t.until) {
+        if let Some((sid, ent)) = bl.iter().min_by_key(|(_, t)| t.until) {
+            tracing::warn!(
+                "all scripts in account pool '{}' are cooling down; retrying {} early ({}s left): {}",
+                account_label,
+                mask_script_id(sid),
+                ent.until.saturating_duration_since(now).as_secs(),
+                ent.reason
+            );
             let sid = sid.clone();
             bl.remove(&sid);
             return (acct.auth_key.clone(), sid);
@@ -570,6 +610,7 @@ impl DomainFronter {
         // Returns (account_index, auth_key, script_id)
         let ai = self.next_account_index();
         let acct = &self.accounts[ai];
+        let account_label = acct.label.as_deref().unwrap_or("default");
         let n = acct.script_ids.len();
         let mut bl = self.blacklist.lock().unwrap();
         let now = Instant::now();
@@ -578,12 +619,27 @@ impl DomainFronter {
         for _ in 0..n {
             let idx = acct.script_idx.fetch_add(1, Ordering::Relaxed);
             let sid = &acct.script_ids[idx % n];
-            if !bl.contains_key(sid) {
+            if let Some(ent) = bl.get(sid) {
+                tracing::debug!(
+                    "skipping blacklisted tunnel script {} in account pool '{}' ({}s left): {}",
+                    mask_script_id(sid),
+                    account_label,
+                    ent.until.saturating_duration_since(now).as_secs(),
+                    ent.reason
+                );
+            } else {
                 return (ai, acct.auth_key.clone(), sid.clone());
             }
         }
         // All blacklisted: pick whichever comes off cooldown soonest.
-        if let Some((sid, _)) = bl.iter().min_by_key(|(_, t)| t.until) {
+        if let Some((sid, ent)) = bl.iter().min_by_key(|(_, t)| t.until) {
+            tracing::warn!(
+                "all tunnel scripts in account pool '{}' are cooling down; retrying {} early ({}s left): {}",
+                account_label,
+                mask_script_id(sid),
+                ent.until.saturating_duration_since(now).as_secs(),
+                ent.reason
+            );
             let sid = sid.clone();
             bl.remove(&sid);
             return (ai, acct.auth_key.clone(), sid);
@@ -605,6 +661,7 @@ impl DomainFronter {
         // Fan-out within a single selected account to keep auth_key consistent.
         let ai = self.next_account_index();
         let acct = &self.accounts[ai];
+        let account_label = acct.label.as_deref().unwrap_or("default");
         let n = acct.script_ids.len();
         if n == 0 {
             return vec![];
@@ -620,7 +677,15 @@ impl DomainFronter {
             }
             let idx = acct.script_idx.fetch_add(1, Ordering::Relaxed);
             let sid = &acct.script_ids[idx % n];
-            if !bl.contains_key(sid) && !picked.iter().any(|p| p == sid) {
+            if let Some(ent) = bl.get(sid) {
+                tracing::debug!(
+                    "skipping blacklisted fan-out script {} in account pool '{}' ({}s left): {}",
+                    mask_script_id(sid),
+                    account_label,
+                    ent.until.saturating_duration_since(now).as_secs(),
+                    ent.reason
+                );
+            } else if !picked.iter().any(|p| p == sid) {
                 picked.push(sid.clone());
             }
         }
@@ -631,14 +696,73 @@ impl DomainFronter {
     }
 
     fn blacklist_script(&self, script_id: &str, reason: &str) {
-        let until = Instant::now() + Duration::from_secs(BLACKLIST_COOLDOWN_SECS);
+        self.blacklist_script_for(
+            script_id,
+            Duration::from_secs(BLACKLIST_COOLDOWN_SECS),
+            reason,
+        );
+    }
+
+    fn blacklist_script_for(&self, script_id: &str, cooldown: Duration, reason: &str) {
+        let until = Instant::now() + cooldown;
         let mut bl = self.blacklist.lock().unwrap();
-        bl.insert(script_id.to_string(), BlacklistEntry { until });
+        bl.insert(
+            script_id.to_string(),
+            BlacklistEntry {
+                until,
+                reason: reason.to_string(),
+            },
+        );
         tracing::warn!(
             "blacklisted script {} for {}s: {}",
             mask_script_id(script_id),
-            BLACKLIST_COOLDOWN_SECS,
+            cooldown.as_secs(),
             reason
+        );
+    }
+
+    /// Mark a tunnel-node / Apps Script deployment unhealthy from full-mode paths.
+    pub fn mark_tunnel_script_unhealthy(&self, script_id: &str, reason: &str) {
+        let lower = reason.to_ascii_lowercase();
+        if lower.contains("timeout") || lower.contains("timed out") {
+            self.record_tunnel_timeout_strike(script_id, reason);
+            return;
+        }
+        self.blacklist_script(script_id, reason);
+    }
+
+    fn record_tunnel_timeout_strike(&self, script_id: &str, reason: &str) {
+        let now = Instant::now();
+        let mut counts = self.tunnel_timeout_strikes.lock().unwrap();
+        let entry = counts.entry(script_id.to_string()).or_insert((now, 0));
+        if now.duration_since(entry.0) > self.auto_blacklist_window {
+            *entry = (now, 1);
+        } else {
+            entry.1 = entry.1.saturating_add(1);
+        }
+        let strikes = entry.1;
+        if strikes < self.auto_blacklist_strikes {
+            tracing::warn!(
+                "tunnel script {} timeout strike {}/{} in {}s: {}",
+                mask_script_id(script_id),
+                strikes,
+                self.auto_blacklist_strikes,
+                self.auto_blacklist_window.as_secs(),
+                reason
+            );
+            return;
+        }
+        counts.remove(script_id);
+        drop(counts);
+        self.blacklist_script_for(
+            script_id,
+            self.auto_blacklist_cooldown,
+            &format!(
+                "{} timeouts in {}s: {}",
+                strikes,
+                self.auto_blacklist_window.as_secs(),
+                reason
+            ),
         );
     }
 
@@ -646,7 +770,13 @@ impl DomainFronter {
         let (_day, reset_secs) = utc_day_and_reset_secs();
         let until = Instant::now() + Duration::from_secs(reset_secs.max(60));
         let mut bl = self.blacklist.lock().unwrap();
-        bl.insert(script_id.to_string(), BlacklistEntry { until });
+        bl.insert(
+            script_id.to_string(),
+            BlacklistEntry {
+                until,
+                reason: format!("quota_cooldown: {}", reason),
+            },
+        );
         tracing::warn!(
             "quota cooldown: blacklisted script {} until UTC reset ({}s): {}",
             mask_script_id(script_id),
@@ -739,6 +869,14 @@ impl DomainFronter {
         }
         if warmed > 0 {
             tracing::info!("pool pre-warmed with {} connection(s)", warmed);
+        }
+    }
+
+    /// Background maintenance: periodically refreshes pooled TLS connections.
+    pub async fn run_h1_keepalive(self: &Arc<Self>) {
+        loop {
+            tokio::time::sleep(Duration::from_secs(300)).await;
+            self.warm(8).await;
         }
     }
 
@@ -858,7 +996,7 @@ impl DomainFronter {
         let has_range = headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("range"));
         let coalescible = is_cacheable_method(method) && body.is_empty() && !has_range;
         let key = if coalescible {
-            Some(cache_key(method, url))
+            Some(cache_key(method, url, headers))
         } else {
             None
         };
@@ -899,12 +1037,9 @@ impl DomainFronter {
         };
 
         if let Some(mut rx) = waiter {
-            // Cancellation-safe coalescing: if the leader gets stuck or panics
-            // and never publishes, don't hang waiters forever.
-            match tokio::time::timeout(Duration::from_secs(40), rx.recv()).await {
-                Ok(Ok(bytes)) => return bytes,
-                Ok(Err(_)) => return error_response(502, "coalesced request dropped"),
-                Err(_) => return error_response(504, "coalesced request timed out"),
+            match rx.recv().await {
+                Ok(bytes) => return bytes,
+                Err(_) => return error_response(502, "coalesced request dropped"),
             }
         }
 
@@ -965,11 +1100,10 @@ impl DomainFronter {
         headers: &[(String, String)],
         body: &[u8],
     ) -> Vec<u8> {
-        let mut chunk = self.range_chunk_bytes.max(16 * 1024);
+        let chunk = self.range_chunk_bytes.max(16 * 1024);
         let mut max_parallel = self.effective_range_parallelism_now().max(1);
-        let host = extract_host(url);
-        if let Some(host) = host.as_deref() {
-            if let Some(o) = self.override_for_host(host) {
+        if let Some(host) = extract_host(url) {
+            if let Some(o) = self.override_for_host(&host) {
                 if o.never_chunk {
                     max_parallel = 1;
                 }
@@ -986,20 +1120,6 @@ impl DomainFronter {
         // don't second-guess a caller that knows what bytes they want.
         if headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("range")) {
             return self.relay(method, url, headers, body).await;
-        }
-
-        // YouTube / googlevideo fast path (export-inspired):
-        // If the URL is a googlevideo.com chunk URL AND it carries `clen=<total_bytes>`,
-        // prefer larger chunking (fewer Apps Script calls) but cap concurrency to
-        // reduce quota pressure. Only applies when the client did NOT send a Range
-        // header (we already returned above in that case).
-        if host
-            .as_deref()
-            .is_some_and(|h| h == "googlevideo.com" || h.ends_with(".googlevideo.com"))
-            && url_contains_clen(url)
-        {
-            chunk = 4 * 1024 * 1024; // 4 MiB per relay call
-            max_parallel = max_parallel.min(4); // 16 MiB in flight max
         }
 
         // Probe with the first chunk.
@@ -1863,6 +1983,12 @@ fn parse_content_range(headers: &[(String, String)]) -> Option<ContentRange> {
     Some(ContentRange { start, end, total })
 }
 
+/// Pull the total size out of a valid `Content-Range: bytes START-END/TOTAL` header.
+#[cfg(test)]
+fn parse_content_range_total(headers: &[(String, String)]) -> Option<u64> {
+    parse_content_range(headers).map(|r| r.total)
+}
+
 fn content_range_matches_body(range: ContentRange, body_len: usize) -> bool {
     body_len > 0 && (range.end - range.start + 1) == body_len as u64
 }
@@ -2026,16 +2152,6 @@ fn extract_host(url: &str) -> Option<String> {
     } else {
         Some(host.to_ascii_lowercase())
     }
-}
-
-fn url_contains_clen(url: &str) -> bool {
-    // Cheap heuristic; good enough for the intended fast path.
-    // We only use this to tune chunking, not to make correctness decisions.
-    let Some(q) = url.split_once('?').map(|(_, q)| q) else {
-        return false;
-    };
-    q.split('&')
-        .any(|part| part.trim_start().starts_with("clen="))
 }
 
 /// The default pool of SNI names that share the Google Front End with
@@ -2860,19 +2976,19 @@ mod tests {
     #[test]
     fn parse_content_range_total_accepts_mixed_case_unit() {
         let headers = vec![("Content-Range".to_string(), "Bytes 0-4/20".to_string())];
-        assert_eq!(parse_content_range(&headers).map(|r| r.total), Some(20));
+        assert_eq!(parse_content_range_total(&headers), Some(20));
     }
 
     #[test]
     fn parse_content_range_total_rejects_descending_range() {
         let headers = vec![("Content-Range".to_string(), "bytes 10-4/20".to_string())];
-        assert_eq!(parse_content_range(&headers).map(|r| r.total), None);
+        assert_eq!(parse_content_range_total(&headers), None);
     }
 
     #[test]
     fn parse_content_range_total_rejects_end_past_total() {
         let headers = vec![("Content-Range".to_string(), "bytes 0-20/20".to_string())];
-        assert_eq!(parse_content_range(&headers).map(|r| r.total), None);
+        assert_eq!(parse_content_range_total(&headers), None);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import org.gradle.api.tasks.Exec
+﻿import org.gradle.api.tasks.Exec
 
 plugins {
     id("com.android.application")
@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "com.therealaleph.mhrv"
+    namespace = "com.farnam.mhrvf"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.therealaleph.mhrv"
+        applicationId = "com.farnam.mhrvf"
         minSdk = 24 // Android 7.0 — covers 99%+ of live devices.
         targetSdk = 34 // Runtime cap; raise when you intentionally target newer API behavior.
         versionCode = 133
@@ -21,7 +21,7 @@ android {
         //   - arm64-v8a      — 95%+ of real-world Android phones since 2019
         //   - armeabi-v7a    — older/cheaper devices still on 32-bit ARM
         //   - x86_64         — Android emulator on Intel Macs + Chromebooks
-        //   - x86            — legacy 32-bit Intel emulator; cheap to include
+        //   - x86            — 32-bit Intel emulator; cheap to include
         // Per-ABI .so files push the APK up to ~50 MB, but users expect one
         // APK that Just Works rather than "pick the right ABI" which nobody
         // does correctly. Google Play would auto-split; we ship universal.
@@ -34,20 +34,9 @@ android {
         create("release") {
             // Committed keystore — fixed signature across machines and
             // across CI runs. Using the auto-generated debug keystore
-            // (as v1.0.0 / v1.0.1 did) makes every release APK fail to
-            // install over the previous one with
-            // INSTALL_FAILED_UPDATE_INCOMPATIBLE, because Android treats
-            // a signature change as "different app": the user has to
-            // uninstall first. That's awful UX.
-            //
-            // The password is in plaintext because this is an
-            // open-source project without Play Store identity. A
-            // forked/rebuilt APK signed with a different key is
-            // fundamentally a different install path anyway — the
-            // protection model here is "trust the source tree you
-            // pulled from," not "trust that we hold a key you can't
-            // see." If you're forking, generate your own key, commit
-            // it, and ship.
+            // makes every release APK fail to install over the previous one
+            // with INSTALL_FAILED_UPDATE_INCOMPATIBLE, because Android treats
+            // a signature change as "different app".
             storeFile = file("release.jks")
             // Must match the committed keystore; do not rename to mhrv-f.
             storePassword = "mhrv-rs-release"
@@ -64,6 +53,18 @@ android {
                 "proguard-rules.pro",
             )
             signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
+    // Per-ABI APK splits in addition to the universal APK. Universal remains
+    // the default download, while users on slow links can choose a smaller APK
+    // that matches their device ABI.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            isUniversalApk = true
         }
     }
 
@@ -114,6 +115,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
+
+    // QR code generation + scanning for config import/export.
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")

@@ -9,12 +9,12 @@
 
     <string name="screen_intro_welcome">اینجا همان جایی است که ترافیک دستگاه را از طریق رلهٔ Google Apps Script خودتان هدایت می‌کنید—با VPN اختیاری (TUN) یا حالت فقط پروکسی. چند دقیقه زیر هر عنوان را بخوانید: می‌گوید اول چه بزنید، هر فیلد چه معنی دارد، و اگر خطا دیدید چه کار کنید.</string>
     <string name="field_mode">حالت</string>
-    <string name="help_section_mode">انتخاب کنید ترافیک چطور از گوشی خارج شود. Apps Script (MITM) تجربهٔ کامل با بازرسی HTTPS است. Google-only برای رسیدن به script.google.com قبل از داشتن رله است. Full tunnel به گرهٔ تونل شما نیاز دارد و مسیر نصب CA کاربر را حذف می‌کند.</string>
-    <string name="help_section_relay">همان URLهای دیپلوی یا IDهای خام و auth_key که در Apps Script گذاشتید را اینجا بگذارید. چند ID بار را پخش می‌کند—در حالت تونل کامل مهم است. وقتی حالت Google-only است این بخش غیرفعال است.</string>
+    <string name="help_section_mode">انتخاب کنید ترافیک چطور از گوشی خارج شود. Apps Script (MITM) تجربهٔ کامل با بازرسی HTTPS است. Direct برای رسیدن به script.google.com قبل از داشتن رله و همچنین fronting_groups فایل کانفیگ است. Full tunnel به گرهٔ تونل شما نیاز دارد و مسیر نصب CA کاربر را حذف می‌کند.</string>
+    <string name="help_section_relay">همان URLهای دیپلوی یا IDهای خام و auth_key که در Apps Script گذاشتید را اینجا بگذارید. چند ID بار را پخش می‌کند—در حالت تونل کامل مهم است. وقتی حالت Direct یا Serverless JSON است این بخش غیرفعال است.</string>
     <string name="help_section_network">google_ip یعنی IPv4 لبهٔ گوگل؛ front_domain نام میزبان SNI بیرونی TLS است. جفت اشتباه = timeout — قبل از سرزنش رله، Auto-detect و تستر SNI را امتحان کنید.</string>
     <string name="help_google_ip">IPv4 لبهٔ گوگل که با front_domain شما به‌عنوان SNI به TLS پاسخ می‌دهد. اگر صفحه بالا نمی‌آید، اول این مقدار را بازبینی کنید.</string>
     <string name="help_front_domain">نام میزبان برای Server Name Indication (نه IP). معمولاً www.google.com؛ شبکهٔ شما ممکن است نام دیگری از گوگل را بهتر قبول کند.</string>
-    <string name="help_before_connect">Connect فیلدها را ذخیره می‌کند، موتور را روشن می‌کند و در حالت VPN مجوز اندروید را می‌خواهد. اگر Connect غیرفعال است، URLها و auth_key را چک کنید—یا موقتاً Google-only بگذارید.</string>
+    <string name="help_before_connect">Connect فیلدها را ذخیره می‌کند، موتور را روشن می‌کند و در حالت VPN مجوز اندروید را می‌خواهد. اگر Connect غیرفعال است، فیلدهای لازم همان حالت را چک کنید—یا موقتاً Direct بگذارید.</string>
     <string name="help_mode_overview">حالت VPN برنامه‌های واجد شرایط را خودکار هدایت می‌کند. فقط پروکسی VPN سیستم را روشن نمی‌کند؛ بعد از Connect باید Wi‑Fi یا هر اپ را دستی به پورت‌های HTTP/SOCKS ببندید.</string>
 
     <!-- Section headers -->
@@ -35,17 +35,35 @@
     <string name="btn_test">تست</string>
     <string name="btn_add">افزودن</string>
     <string name="btn_clear">پاک</string>
+    <string name="btn_copy">کپی</string>
     <string name="btn_install">نصب</string>
     <string name="btn_cancel">انصراف</string>
+    <string name="btn_paste">Paste</string>
+    <string name="btn_share">Share</string>
+    <string name="btn_close">Close</string>
+    <string name="btn_import">Import</string>
+    <string name="btn_export_config">Export config</string>
+    <string name="btn_scan_qr">Scan QR</string>
+    <string name="scan_qr_prompt">Scan mhrv config QR code</string>
+    <string name="snack_config_imported">Config imported</string>
+    <string name="snack_config_copied">Config copied to clipboard</string>
+    <string name="snack_invalid_config">Invalid config</string>
+    <string name="dialog_export_title">Export config</string>
+    <string name="dialog_export_warning">This includes your auth key. Only share with people you trust.</string>
+    <string name="dialog_import_title">Import config?</string>
+    <string name="dialog_import_warning">Only import configs from trusted sources.</string>
+    <string name="dialog_import_body">This will replace your current settings.</string>
+    <string name="qr_too_large">Config too large for QR code</string>
 
     <string name="notif_channel_name">MasterHttpRelayVPN-Frankestein</string>
     <string name="notif_channel_desc">وضعیت پیش‌زمینه هنگام بالا بودن تونل رله</string>
     <string name="notif_vpn_title">تونل VPN فعال است</string>
-    <string name="notif_vpn_text">مسیریابی از طریق SOCKS5 127.0.0.1:%1$d</string>
+    <string name="notif_vpn_text">HTTP 127.0.0.1:%1$d  ·  SOCKS5 127.0.0.1:%2$d</string>
     <string name="notif_action_stop">توقف</string>
 
     <!-- Field labels -->
     <string name="field_deployment_urls">آدرس‌(های) Deployment یا Script ID</string>
+    <string name="placeholder_paste_ids">یک URL/ID، یا چند مورد با خط جدید/فاصله/ویرگول/نقطه‌ویرگول جدا کنید</string>
     <string name="field_auth_key">کلید احراز (auth_key)</string>
     <string name="field_google_ip">google_ip</string>
     <string name="field_front_domain">دامنهٔ فرانت</string>
@@ -85,19 +103,33 @@
     <!-- Advanced section -->
     <string name="adv_verify_tls">بررسی TLS طرف مقابل</string>
     <string name="adv_verify_tls_help">در حالت عادی روشن بماند. خاموش یعنی اعتبارسنجی TLS تا لبهٔ گوگل رد می‌شود—فقط برای عیب‌یابی handshake.</string>
+    <string name="adv_lan_sharing">اشتراک پروکسی در شبکه</string>
+    <string name="adv_lan_sharing_help">شنونده‌ها روی 0.0.0.0 قرار می‌گیرند تا دستگاه‌های دیگر همین وای‌فای بتوانند از HTTP/SOCKS این گوشی استفاده کنند. هر کسی در شبکه می‌تواند سهمیهٔ Apps Script شما را مصرف کند.</string>
     <string name="adv_log_level">log_level</string>
     <string name="adv_parallel_relay">parallel_relay: %1$d</string>
     <string name="adv_parallel_relay_help">چند تلاش رلهٔ تکراری برای هر درخواست منطقی. ۱ عادی است؛ مقدار بالاتر سهمیهٔ Apps Script را سریع‌تر می‌سوزاند.</string>
     <string name="adv_upstream_socks5">upstream_socks5 (اختیاری)</string>
     <string name="adv_upstream_socks5_help">اختیاری: زنجیره از طریق SOCKS5 دیگر (مثلاً ورودی xray محلی). خالی یعنی مستقیم به گوگل.</string>
+    <string name="adv_tip_more">برای توضیح کامل همهٔ گزینه‌های پیشرفته (سرعت در برابر quota و پایداری)، فایل docs/advanced-options.fa.md را ببینید.</string>
 
     <!-- Live logs -->
     <string name="logs_lines_count">%1$d خط</string>
+
+    <!-- Usage today card -->
+    <string name="sec_usage_today">مصرف امروز (تخمینی)</string>
+    <string name="label_calls_today">درخواست‌های امروز</string>
+    <string name="label_bytes_today">بایت امروز</string>
+    <string name="label_resets_in">ریست تا</string>
+    <string name="usage_calls_of_quota">%1$d / %2$d  (%3$.1f%%)</string>
+    <string name="usage_resets_hm">%1$d ساعت و %2$d دقیقه</string>
+    <string name="btn_view_quota_on_google">مشاهده سهمیه در گوگل</string>
+    <string name="usage_today_note">این فقط تخمین همین دستگاه است. عدد معتبر حساب را داشبورد گوگل نشان می‌دهد.</string>
 
     <!-- Snackbar -->
     <string name="snack_google_ip_updated">google_ip به %1$s به‌روزرسانی شد</string>
     <string name="snack_google_ip_current">google_ip قبلاً به‌روز است (%1$s)</string>
     <string name="snack_dns_lookup_failed">خطای DNS — اتصال شبکه را بررسی کنید</string>
+    <string name="snack_logs_copied">لاگ‌ها در کلیپ‌بورد کپی شدند</string>
 
     <!-- Snackbar / status (HomeScreen) -->
     <string name="snack_update_available">به‌روزرسانی موجود است: v%1$s → v%2$s  %3$s</string>

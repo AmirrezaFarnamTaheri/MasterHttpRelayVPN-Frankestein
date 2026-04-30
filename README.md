@@ -5,9 +5,9 @@
 [![CI](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/actions/workflows/release.yml/badge.svg)](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/github/license/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein?color=blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein?style=flat&logo=github)](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/stargazers)
-[![Support](https://img.shields.io/badge/❤️_Support-sh1n.org-red?style=flat)](https://sh1n.org/donate)
 
-**MasterHttpRelayVPN-Frankestein** is the unified **mhrv-f** line: one CLI, one desktop UI, and one Android app—merging the relay, tunneling, and tooling ideas that grew around the original [MasterHttpRelayVPN](https://github.com/masterking32/MasterHttpRelayVPN) design. **Credit for the Apps Script relay concept and the reference `Code.gs` goes to [@masterking32](https://github.com/masterking32).**
+
+**MasterHttpRelayVPN-Frankestein** is the unified **mhrv-f** line: one CLI, one desktop UI, and one Android app for Apps Script relay, serverless JSON relay, Google bootstrap, and full tunnel workflows.
 
 Free DPI bypass via Google Apps Script as a remote relay, with TLS SNI concealment. Your ISP sees traffic toward `www.google.com`; the relay in your own Google account fetches the real destination for you.
 
@@ -18,6 +18,21 @@ Bug reports and contributions: [issues](https://github.com/AmirrezaFarnamTaheri/
 ## Why this exists
 
 A single self-contained build keeps setup reliable on networks where language runtimes and package managers are hard to use. You run one downloaded binary; no separate interpreter install.
+
+## Relay modes at a glance
+
+`mhrv-f` now supports multiple transport modes:
+
+- **Apps Script (`apps_script`)**: the classic no-VPS path through your own Google Apps Script deployment.
+- **Serverless JSON (`vercel_edge`)**: a native no-VPS fetch relay through the bundled Vercel or Netlify Edge function.
+- **Direct (`direct`)**: no-relay SNI rewrite for Google plus configured `fronting_groups` such as Vercel, Fastly, and Netlify/CloudFront.
+- **Full tunnel (`full`)**: advanced tunnel-node mode for end-to-end full-device routing.
+
+If you are setting up from scratch, start with the desktop first-run wizard or read [`docs/relay-modes.md`](docs/relay-modes.md). The Vercel JSON guide is [`docs/vercel-json-relay.md`](docs/vercel-json-relay.md), and the Netlify JSON guide is [`docs/netlify-json-relay.md`](docs/netlify-json-relay.md). The Vercel and Netlify XHTTP tools are different: they front an Xray backend and still need a server. The optional Cloudflare Worker JSON relay is documented in [`docs/cloudflare-worker-json-relay.md`](docs/cloudflare-worker-json-relay.md).
+
+For desktop per-app proxy, Android app splitting, and sharing the proxy to
+trusted LAN devices, see
+[`docs/sharing-and-per-app-routing.md`](docs/sharing-and-per-app-routing.md).
 
 ## How it works
 
@@ -52,7 +67,7 @@ Linux (x86_64, aarch64), macOS (x86_64, aarch64), Windows (x86_64), **Android 7.
 
 **Android users** — grab `mhrv-f-android-universal-v*.apk` and follow the full walk-through in [docs/android.md](docs/android.md) (English) or [docs/android.fa.md](docs/android.fa.md) (فارسی). The Android build runs the exact same `mhrv-f` crate as the desktop (via JNI) and adds a TUN bridge via `tun2proxy`, so every app on the device routes its IP traffic through the proxy without per-app configuration.
 
-> **Android and HTTPS in other apps:** TUN mode captures IP traffic, but *HTTPS* in arbitrary apps only works if the app trusts the user-installed CA. On Android 7+ (`minSdk = 24`), that requires the app to opt in (e.g. `networkSecurityConfig`). **Chrome and Firefox typically do**; many chat, social, and banking apps do not. For those, use `PROXY_ONLY` with the app’s own proxy settings, `google_only` when you only need Google services, or `upstream_socks5` to another path. This follows normal Android trust rules, not a limitation specific to this app.
+> **Android and HTTPS in other apps:** TUN mode captures IP traffic, but *HTTPS* in arbitrary apps only works if the app trusts the user-installed CA. On Android 7+ (`minSdk = 24`), that requires the app to opt in (e.g. `networkSecurityConfig`). **Chrome and Firefox typically do**; many chat, social, and banking apps do not. For those, use `PROXY_ONLY` with the app’s own proxy settings, `direct` when you only need Google services, or `upstream_socks5` to another path. This follows normal Android trust rules, not a limitation specific to this app.
 
 ## What's in a release
 
@@ -61,14 +76,26 @@ Each archive contains two binaries and a launcher script:
 | file | purpose |
 |---|---|
 | `mhrv-f` / `mhrv-f.exe` | CLI. Headless use, servers, automation. Works on all platforms; no system deps on macOS/Windows. |
-| `mhrv-f-ui` / `mhrv-f-ui.exe` | Desktop UI (egui). Config form, Start/Stop/Test buttons, live stats, log panel. |
+| `mhrv-f-ui` / `mhrv-f-ui.exe` | Desktop UI (egui). Tabbed Setup, Network, Advanced, Monitor, and Help & docs views with Start/Stop/Test controls, backend helper links, live stats, and logs. |
 | `run.sh` / `run.command` / `run.bat` | Platform launcher: installs the MITM CA (needs sudo/admin) and then starts the UI. Use this on first run. |
 
 macOS archives also ship `mhrv-f.app` (in `*-app.zip`) — double-click to launch the UI without a terminal. You'll still need to run the CLI (`mhrv-f --install-cert`) or `run.command` once to install the CA.
 
-> Screenshot note: the UI changes frequently; instead of shipping a stale screenshot, use the in-app **Help & walkthrough** panel and the docs hub at `docs/index.md`.
+> Screenshot note: the UI changes frequently; instead of shipping a stale screenshot, use the in-app **Help & docs** tab and the docs hub at `docs/index.md`.
 
 Linux UI also needs common desktop libraries available: `libxkbcommon`, `libwayland-client`, `libxcb`, `libgl`, `libx11`, `libgtk-3`. On most desktop distros these are already present; on a headless box install them via your package manager, or just use the CLI.
+
+Advanced tuning reference: see [`docs/advanced-options.md`](docs/advanced-options.md) for a plain-language explanation of every advanced knob and how changing it affects speed, stability, and Apps Script quota usage.
+
+Sharing reference: see
+[`docs/sharing-and-per-app-routing.md`](docs/sharing-and-per-app-routing.md)
+for desktop per-app proxy setup, Android app splitting, and safe LAN sharing.
+
+Releases also include `SHA256SUMS.txt` so you can verify downloaded archives and APKs before installing them.
+
+Windows maintainers can build a local installer ZIP with
+`build-windows-installer.ps1`; see
+[`docs/desktop-installer.md`](docs/desktop-installer.md).
 
 ## Where things live
 
@@ -89,11 +116,11 @@ The CLI also reads `config.json` in the current working directory if you prefer 
 
 ### Step 1 — Deploy the Apps Script relay (one-time)
 
-This part is unchanged from the original project. Follow @masterking32's guide or the summary below:
+Use the bundled script file so the client and relay protocol stay in sync:
 
 1. Open <https://script.google.com> while signed into your Google account.
 2. **New project**, delete the default code.
-3. Copy the relay script from this repo: [`assets/apps_script/Code.gs`](assets/apps_script/Code.gs) (see [`assets/apps_script/README.md`](assets/apps_script/README.md) for the upstream relationship). Paste it into the Apps Script editor.
+3. Copy [`assets/apps_script/Code.gs`](assets/apps_script/Code.gs) into the Apps Script editor.
 4. Change `const AUTH_KEY = "..."` to a strong secret only you know.
 5. **Deploy → New deployment → Web app**.
    - Execute as: **Me**
@@ -102,12 +129,12 @@ This part is unchanged from the original project. Follow @masterking32's guide o
 
 #### Can't reach `script.google.com` from your network?
 
-If your ISP is already blocking Google Apps Script (or all of Google), you need Step 1's browser connection to succeed *before* you have a relay to use. `mhrv-f` ships a small bootstrap mode for exactly this: `google_only`.
+If your ISP is already blocking Google Apps Script (or all of Google), you need Step 1's browser connection to succeed *before* you have a relay to use. `mhrv-f` ships `direct` mode for exactly this: SNI rewrite without Apps Script, Vercel/Netlify JSON, or a VPS.
 
 1. Build / download the binary as in Step 2 below.
-2. Copy [`config.google-only.example.json`](config.google-only.example.json) to `config.json` — no `script_id`, no `auth_key` required.
+2. Copy [`config.direct.example.json`](config.direct.example.json) to `config.json` — no `script_id`, no `auth_key` required.
 3. Run `mhrv-f serve` and set your browser's HTTP proxy to `127.0.0.1:8085`.
-4. In `google_only` mode the proxy only relays `*.google.com`, `*.youtube.com`, and the other Google-edge hosts via the same SNI-rewrite tunnel the full client uses. Other traffic goes direct — no Apps Script relay exists yet.
+4. In `direct` mode the proxy routes Google-edge hosts through built-in SNI rewrite, and can also route configured [`fronting_groups`](docs/fronting-groups.md) for Vercel/Fastly/Netlify-style targets. Other traffic goes raw/direct — no Apps Script relay exists yet.
 5. Do Step 1 in your browser (the connection to `script.google.com` will be SNI-fronted). Deploy Code.gs, copy the Deployment ID.
 6. In the desktop UI or the Android app (or by editing `config.json`) switch the mode back to `apps_script`, paste the Deployment ID and your auth key, and restart.
 
@@ -137,7 +164,7 @@ To route your browser's HTTPS traffic through the Apps Script relay, `mhrv-f` ha
 - A fresh CA keypair (`ca/ca.crt` + `ca/ca.key`) is generated **on your machine**, in your user-data dir.
 - The public `ca.crt` is added to your system trust store so browsers accept the per-site certificates `mhrv-f` mints on the fly. This is the step that needs sudo / Administrator.
 - The private `ca.key` **never leaves your machine**. Nothing uploads it, nothing phones home, and no remote party — including the Apps Script relay — can use it to impersonate sites to you.
-- You can revoke it at any time by deleting the CA from your OS keychain (macOS: Keychain Access → System → delete `mhrv-f`) / Windows cert store / `/etc/ca-certificates`, and removing the `ca/` folder.
+- You can revoke it at any time with `mhrv-f --remove-cert` or the UI **Remove CA** button. Removal clears OS trust, attempts Firefox/NSS cleanup, and deletes the local `ca/` folder only after OS trust no longer appears active.
 
 The launcher does all of this for you and then starts the UI:
 
@@ -218,6 +245,7 @@ Then:
 ./mhrv-f doctor            # guided diagnostics (first-run fix assistant)
 ./mhrv-f scan-ips          # rank Google frontend IPs by latency
 ./mhrv-f --install-cert    # reinstall the MITM CA
+./mhrv-f --remove-cert     # remove OS/browser trust and delete local ca/
 ./mhrv-f --help
 ```
 
@@ -318,6 +346,7 @@ The tool listens on **two** ports. Use whichever your client supports:
 **SOCKS5 proxy** (Telegram, xray, app-level clients) — `127.0.0.1:8086`, no auth.
 
 - Works for HTTP, HTTPS, **and** non-HTTP protocols (Telegram's MTProto, raw TCP). The server auto-detects each connection: HTTP/HTTPS go through the Apps Script relay, SNI-rewritable domains go through the direct Google-edge tunnel, and anything else falls through to raw TCP.
+- For browser SOCKS mode, enable "proxy DNS through SOCKS" / `socks5h` behavior when the client offers it. HTTP/HTTPS requests can recover the host from SNI or absolute URLs, but raw TCP apps that send only an IP address lose routing context.
 
 ## Telegram, IMAP, SSH — pair with xray (optional)
 
@@ -339,28 +368,27 @@ Example config fragment (both UI and JSON):
 }
 ```
 
-HTTP/HTTPS continues to route through the Apps Script relay (no change), and the SNI-rewrite tunnel for `google.com` / `youtube.com` / etc. keeps bypassing both — so YouTube stays as fast as before while Telegram gets a real tunnel.
+HTTP/HTTPS continues to route through the Apps Script relay unless a domain override or SNI-rewrite rule applies. Google/YouTube page surfaces can still use the fast Google-edge path, while raw-TCP apps such as Telegram are handed to your upstream tunnel instead of falling back to a blocked direct connection.
 
 ## Full tunnel mode
 
-Full tunnel mode (`"mode": "full"`) routes **all** traffic end-to-end through Apps Script and a remote [tunnel-node](tunnel-node/) — no MITM certificate needed. The trade-off is higher latency per request (every byte goes Apps Script → tunnel-node → destination), but it works for every protocol and every app without CA installation.
+Full tunnel mode (`"mode": "full"`) routes TCP streams and SOCKS5 UDP datagrams end-to-end through Apps Script and a remote [tunnel-node](tunnel-node/) — no MITM certificate needed. The trade-off is higher latency per stream/datagram (traffic goes Apps Script → tunnel-node → destination), but it works for apps that cannot install or trust a local CA.
 
-### How deployment IDs affect performance
+### How account groups affect performance
 
-Each Apps Script batch request takes ~2 seconds round-trip. In full mode, `mhrv-f` runs a **pipelined batch multiplexer** that fires multiple batch requests concurrently without waiting for the previous one to return. The number of in-flight batches (the *pipeline depth*) scales directly with the number of deployment IDs you configure:
+Each Apps Script batch request takes ~2 seconds round-trip. In full mode, `mhrv-f` runs a **pipelined batch multiplexer** that fires multiple batch requests concurrently without waiting for the previous one to return. Concurrency is guarded per Google account group:
 
 ```
-pipeline_depth = number_of_script_ids  (clamped to 2..12)
+concurrency_pool = enabled account_groups * 30 in-flight batch requests
 ```
 
-| Deployments | Pipeline depth | Effective batch interval | Notes |
-|-------------|---------------|------------------------|-------|
-| 1 | 2 | ~1.0s | Minimum — still pipelines 2 batches |
-| 3 | 3 | ~0.7s | Good for light browsing |
-| 6 | 6 | ~0.3s | Recommended for daily use |
-| 12 | 12 | ~0.17s | Maximum — diminishing returns past this |
+| Config shape | What it improves | Notes |
+|--------------|------------------|-------|
+| 1 account group, 1 deployment | Baseline full tunnel | Enough to start testing |
+| 1 account group, many deployments | Rotation and resilience | Shares the same Google account execution/quota pool |
+| Many account groups | Real concurrency and quota scaling | Best path for shared/heavy use |
 
-More deployments = more concurrent batches = lower per-session latency. Each batch round-robins across your deployment IDs, so the load is spread evenly and you're less likely to hit a single deployment's quota ceiling.
+Each enabled `account_groups[]` entry represents one Google account/auth key and one or more Apps Script Web App IDs. Extra IDs inside the same group are useful for round-robin rotation and fallback, but they still share that Google account's simultaneous-execution and daily `UrlFetchApp` quota. Add more account groups when you need more real concurrency or more daily quota.
 
 **Resource guards** keep things safe:
 - **50 ops max** per batch — if more sessions are active, the mux splits into multiple batches
@@ -369,18 +397,25 @@ More deployments = more concurrent batches = lower per-session latency. Each bat
 
 ### Quick start
 
-1. Deploy [`CodeFull.gs`](assets/apps_script/CodeFull.gs) as **3–12 Web App deployments** (same steps as `Code.gs`, but use the full-mode script that forwards to your tunnel-node). You can create multiple deployments on a single Google account — each "New deployment" produces its own ID. Going multi-account only matters for the daily quota (each Google account gets its own 20 000 `UrlFetchApp` calls/day on the free tier / 100 000 on Workspace); the pipeline depth itself scales fine on one account up to Apps Script's simultaneous-execution ceiling. Rule of thumb:
-   - **Solo use** → 3–6 deployments on one account is plenty
-   - **Shared with ~3 people** → 6 deployments on one account, bump to multi-account only if you start hitting quota alerts
-   - **Shared with a group** → one account per heavy user (each with 1–2 deployments) is the clean scaling path
+1. Deploy [`CodeFull.gs`](assets/apps_script/CodeFull.gs) as a Web App (same steps as `Code.gs`, but use the full-mode script that forwards to your tunnel-node). One deployment per Google account is enough for concurrency; add extra IDs in the same group for rotation/failover, and add extra account groups for quota/concurrency.
 2. Deploy the [tunnel-node](tunnel-node/) on a VPS
-3. Set `"mode": "full"` in your config with all deployment IDs:
+3. Set `"mode": "full"` in your config with account groups:
 
 ```json
 {
   "mode": "full",
-  "script_id": ["id1", "id2", "id3", "id4", "id5", "id6"],
-  "auth_key": "your-secret"
+  "account_groups": [
+    {
+      "label": "personal",
+      "auth_key": "your-secret",
+      "script_ids": ["id1", "id2"]
+    },
+    {
+      "label": "backup",
+      "auth_key": "another-secret",
+      "script_ids": ["id3"]
+    }
+  ]
 }
 ```
 
@@ -417,12 +452,12 @@ Memory footprint is ~15-20 MB resident — fine on anything with ≥128 MB RAM. 
 Docs:
 - [Doctor guide (EN)](docs/doctor.md)
 - [راهنمای دکتر (FA)](docs/doctor.fa.md)
-- [راهنمای تکمیلی (فارسی)](docs/forum-cleaned.fa.md)
-- [Optional future extensions](docs/optional-extensions.md)
+- [Field notes and edge candidates](docs/field-notes.md)
+- [Per-app routing and LAN sharing](docs/sharing-and-per-app-routing.md)
 
 ### SNI pool editor
 
-By default `mhrv-f` rotates through `{www, mail, drive, docs, calendar}.google.com` on outbound TLS connections to your Google IP, to avoid fingerprinting one name too heavily. Some of those may be locally blocked — e.g. `mail.google.com` has been specifically targeted in Iran at various times.
+By default `mhrv-f` rotates through a built-in Google edge candidate pool on outbound TLS connections to your Google IP, to avoid fingerprinting one name too heavily. The pool includes Google, Gmail, Workspace, Gstatic, Google APIs, connectivity-check, and GVT beacon hostnames that can be tested from the UI.
 
 Either:
 
@@ -431,11 +466,11 @@ Either:
 
 ```json
 {
-  "sni_hosts": ["www.google.com", "drive.google.com", "docs.google.com"]
+  "sni_hosts": ["www.google.com", "ssl.gstatic.com", "clientservices.googleapis.com"]
 }
 ```
 
-Leaving `sni_hosts` unset gives you the default auto-pool. Run `mhrv-f test-sni` to verify what works from your network before saving.
+Leaving `sni_hosts` unset gives you the default auto-pool. Run `mhrv-f test-sni` to verify what works from your network before saving, because SNI reachability is ISP- and day-dependent.
 
 ## Capabilities (what you can rely on)
 
@@ -461,8 +496,8 @@ Not in scope (by design):
 
 These are inherent to the Apps Script + domain-fronting approach, not bugs in this client. The original Python version has the same issues.
 
-- **User-Agent is fixed to `Google-Apps-Script`** for anything going through the relay. `UrlFetchApp.fetch()` does not allow overriding it. Consequence: sites that detect bots (e.g., Google search, some CAPTCHA flows) serve degraded / no-JS fallback pages to relayed requests. Workaround: add the affected domain to the `hosts` map so it's routed through the SNI-rewrite tunnel with your real browser's UA instead. `google.com`, `youtube.com`, `fonts.googleapis.com` are already there by default.
-- **Video playback is slow and quota-limited** for anything that goes through the relay. YouTube HTML loads through the tunnel (fast), but chunks from `googlevideo.com` go through Apps Script. Each Apps Script consumer account has a ~2 M `UrlFetchApp` calls/day quota and a 50 MB body limit per fetch. Fine for text browsing, painful for 1080p. Rotate multiple `script_id`s for more headroom, or use a real VPN for video.
+- **User-Agent through Apps Script is best-effort.** The bundled Apps Script now forwards the browser `User-Agent` header for compatibility, but Google/UrlFetchApp may still expose an Apps-Script-like fetch fingerprint on some paths. If a site serves a degraded/no-JS fallback, route that host through SNI rewrite (`hosts` / `domain_overrides`) or Full mode instead.
+- **Video playback is slow and quota-limited** for anything that goes through the relay. YouTube HTML/API surfaces can use SNI rewrite by default, `ytimg.com` thumbnails/assets stay on SNI rewrite, and `googlevideo.com` chunks are kept off the normal Google frontend rewrite because they use separate video edges. Those chunks may still go through Apps Script and count against quota. YouTube SABR streams (`sabr=1`) can hit a buffering timeout around one minute through Apps Script. Rotate multiple `script_id`s for more headroom, or use `full` mode / a real VPN for video.
 - **Brotli is stripped** from forwarded `Accept-Encoding` headers. Apps Script can decompress gzip, but not `br`, and forwarding `br` produces garbled responses. Minor size overhead.
 - **WebSockets don't work** through the relay — it's single request/response JSON. Sites that upgrade to WS fail (ChatGPT streaming, Discord voice, etc.).
 - **HSTS-preloaded / hard-pinned sites** will reject the MITM cert. Most sites are fine because the CA is trusted; a handful aren't.
@@ -479,15 +514,7 @@ These are inherent to the Apps Script + domain-fronting approach, not bugs in th
 
 MIT. See [LICENSE](LICENSE).
 
-## Credit
-
-Original project: <https://github.com/masterking32/MasterHttpRelayVPN> by [@masterking32](https://github.com/masterking32). The idea, the Google Apps Script protocol, the proxy architecture, and the ongoing maintenance are all his. This Rust port exists purely to make client-side distribution easier.
-
-## Support this project
-
-If `mhrv-f` has been useful to you and you'd like to support continued development:
-
-### [❤️ Support on sh1n.org](https://sh1n.org/donate)
+<!-- Support / donation links removed (per repo policy). -->
 
 Donations cover hosting, self-hosted CI runner costs, and continued maintenance. Starring the repo also helps signal that the project is worth keeping alive.
 
@@ -501,7 +528,7 @@ Donations cover hosting, self-hosted CI runner costs, and continued maintenance.
 
 یک پروکسی کوچک که روی سیستم خودتان اجرا می‌شود و ترافیک شما را از طریق یک اسکریپت رایگان که در حساب گوگل خودتان می‌سازید، عبور می‌دهد. `ISP` شما فقط یک اتصال `HTTPS` ساده به `www.google.com` می‌بیند و اجازه می‌دهد رد شود؛ در پشت پرده، اسکریپتی که خودتان منتشر می‌کنید سایت مقصد را برای شما می‌خواند و پاسخ را بازمی‌گرداند.
 
-**MasterHttpRelayVPN-Frankestein** همان خط یکپارچهٔ **mhrv-f** است: **اعتبار ایده‌ی اصلی رله و `Code.gs`ی مرجع** برای [@masterking32](https://github.com/masterking32) و پروژهٔ [MasterHttpRelayVPN](https://github.com/masterking32/MasterHttpRelayVPN) است. شما اینجا یک کلایント آماده (دسکتاپ و اندروید) برای همان الگو دریافت می‌کنید.
+**MasterHttpRelayVPN-Frankestein** یا همان **mhrv-f** یک خط یکپارچه برای رلهٔ `Apps Script`، رلهٔ `JSON` سرورلس، بوت‌استرپ گوگل، و تونل کامل است. اینجا یک کلاینت آمادهٔ دسکتاپ و اندروید همراه با ابزارهای استقرار دریافت می‌کنید.
 
 باگ یا پیشنهاد: [issues](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/issues).
 
@@ -536,15 +563,15 @@ Donations cover hosting, self-hosted CI runner costs, and continued maintenance.
 
 #### به `script.google.com` هم دسترسی ندارید؟
 
-اگر `ISP` شما از قبل `Apps Script` (یا کل گوگل) را مسدود کرده، برای مرحلهٔ ۱ باید مرورگرتان **اول** به `script.google.com` برسد — قبل از اینکه رله‌ای داشته باشید. `mhrv-f` یک حالت بوت‌استرپ کوچک دقیقاً برای همین دارد: `google_only`.
+اگر `ISP` شما از قبل `Apps Script` (یا کل گوگل) را مسدود کرده، برای مرحلهٔ ۱ باید مرورگرتان **اول** به `script.google.com` برسد — قبل از اینکه رله‌ای داشته باشید. `mhrv-f` یک حالت بوت‌استرپ کوچک دقیقاً برای همین دارد: `direct`.
 
 ۱. برنامه را طبق مرحلهٔ ۲ پایین دانلود کنید
 
-۲. فایل [`config.google-only.example.json`](config.google-only.example.json) را در کنار فایل اجرایی به نام `config.json` کپی کنید — نه `script_id` لازم دارد و نه `auth_key`
+۲. فایل [`config.direct.example.json`](config.direct.example.json) را در کنار فایل اجرایی به نام `config.json` کپی کنید — نه `script_id` لازم دارد و نه `auth_key`
 
 ۳. برنامه را اجرا کنید و `HTTP proxy` مرورگرتان را روی `127.0.0.1:8085` تنظیم کنید
 
-۴. در حالت `google_only`، پروکسی فقط `*.google.com`، `*.youtube.com` و بقیهٔ میزبان‌های لبهٔ گوگل را از طریق همان تونل بازنویسی `SNI` رد می‌کند. بقیهٔ ترافیک مستقیم می‌رود — هنوز رله‌ای در کار نیست
+۴. در حالت `direct`، پروکسی فقط `*.google.com`، `*.youtube.com` و بقیهٔ میزبان‌های لبهٔ گوگل را از طریق همان تونل بازنویسی `SNI` رد می‌کند. بقیهٔ ترافیک مستقیم می‌رود — هنوز رله‌ای در کار نیست
 
 ۵. حالا مرحلهٔ ۱ را در مرورگر انجام دهید (اتصال به `script.google.com` با `SNI` فرونت می‌شود). `Code.gs` را مستقر کنید و `Deployment ID` را کپی کنید
 
@@ -560,7 +587,7 @@ Donations cover hosting, self-hosted CI runner costs, and continued maintenance.
 |---|---|
 | مک اپل‌سیلیکون (`M1` / `M2` / …) | `mhrv-f-macos-arm64-app.zip` (قابل دوبار کلیک در `Finder`) |
 | مک اینتل | `mhrv-f-macos-amd64-app.zip` |
-| ویندوز | `mhrv-f-windows-amd64.zip` |
+| ویندوز ۶۴ بیتی | `mhrv-f-windows-amd64.zip` |
 | لینوکس معمولی (اوبونتو، مینت، دبیان، فدورا، آرچ، …) | `mhrv-f-linux-amd64.tar.gz` |
 | لینوکس روی روتر (`OpenWRT`) یا `Alpine` | `mhrv-f-linux-musl-amd64.tar.gz` |
 
@@ -692,24 +719,23 @@ Donations cover hosting, self-hosted CI runner costs, and continued maintenance.
 
 ### حالت تونل کامل (Full tunnel mode)
 
-حالت `"mode": "full"` **تمام** ترافیک را سرتاسر از طریق `Apps Script` و یک [tunnel-node](tunnel-node/) روی سرور شما عبور می‌دهد — **بدون نیاز به نصب گواهی `MITM`**. تنها هزینه‌اش تأخیر بیشتر است (هر بایت از مسیر `Apps Script → tunnel-node → مقصد` می‌رود)، اما برای هر پروتکل و هر برنامه بدون نصب `CA` کار می‌کند.
+حالت `"mode": "full"` جریان‌های `TCP` و دیتاگرام‌های `UDP` مربوط به `SOCKS5` را سرتاسر از طریق `Apps Script` و یک [tunnel-node](tunnel-node/) روی سرور شما عبور می‌دهد — **بدون نیاز به نصب گواهی `MITM`**. تنها هزینه‌اش تأخیر بیشتر است (ترافیک از مسیر `Apps Script → tunnel-node → مقصد` می‌رود)، اما برای برنامه‌هایی که نمی‌توانند یک `CA` محلی را نصب یا trust کنند کار می‌کند.
 
-#### چرا تعداد `Deployment ID` مهم است؟
+#### چرا `account_groups` مهم است؟
 
-هر درخواست دسته‌ای (`batch`) به `Apps Script` حدود ۲ ثانیه طول می‌کشد. در حالت `full`، برنامه یک **لولهٔ موازی** (`pipeline`) اجرا می‌کند که چند درخواست دسته‌ای را همزمان می‌فرستد بدون اینکه منتظر پاسخ قبلی بماند. تعداد درخواست‌های همزمان مستقیماً با تعداد `Deployment ID`ها رابطه دارد:
+هر درخواست دسته‌ای (`batch`) به `Apps Script` حدود ۲ ثانیه طول می‌کشد. در حالت `full`، برنامه یک **لولهٔ موازی** (`pipeline`) اجرا می‌کند که چند درخواست دسته‌ای را همزمان می‌فرستد بدون اینکه منتظر پاسخ قبلی بماند. همزمانی بر اساس گروه‌های حساب Google کنترل می‌شود:
 
 ```
-عمق لوله = تعداد Deployment IDها  (حداقل ۲، حداکثر ۱۲)
+ظرفیت همزمانی = تعداد account_groups فعال * ۳۰ درخواست batch همزمان
 ```
 
-| تعداد Deployment | عمق لوله | فاصلهٔ مؤثر بین دسته‌ها | |
-|-----------------|----------|------------------------|---|
-| ۱ | ۲ | ~۱ ثانیه | حداقل |
-| ۳ | ۳ | ~۰.۷ ثانیه | مناسب مرور سبک |
-| ۶ | ۶ | ~۰.۳ ثانیه | توصیه‌شده برای استفادهٔ روزانه |
-| ۱۲ | ۱۲ | ~۰.۱۷ ثانیه | حداکثر |
+| شکل تنظیمات | چه چیزی بهتر می‌شود | نکته |
+|-------------|----------------------|------|
+| یک گروه حساب، یک Deployment | شروع و تست اولیه | برای شروع کافی است |
+| یک گروه حساب، چند Deployment | چرخش و پایداری بهتر | همچنان سهمیه و سقف اجرای همان حساب Google را مصرف می‌کند |
+| چند گروه حساب | همزمانی و سهمیهٔ واقعی بیشتر | بهترین مسیر برای استفادهٔ سنگین یا اشتراکی |
 
-بیشتر `Deployment` = بیشتر درخواست همزمان = تأخیر کمتر برای هر نشست. هر دسته بین `ID`ها چرخش می‌کند (`round-robin`)، پس بار به‌طور یکنواخت توزیع می‌شود.
+هر ورودی فعال در `account_groups[]` نمایندهٔ یک حساب Google/کلید احراز هویت و یک یا چند Web App ID است. IDهای بیشتر داخل همان گروه برای `round-robin` و fallback مفیدند، اما سقف اجرای همزمان و سهمیهٔ روزانهٔ همان حساب را به اشتراک می‌گذارند. برای همزمانی یا سهمیهٔ واقعی بیشتر، گروه حساب جدید اضافه کنید.
 
 ### اجرا روی OpenWRT (روتر)
 
@@ -765,7 +791,7 @@ logread -e mhrv-f -f
 - **لینوکس:** فایل `/usr/local/share/ca-certificates/mhrv-f.crt` را حذف و `sudo update-ca-certificates` اجرا کنید
 
 **چند `Deployment ID` لازم دارم؟**
-یکی برای استفادهٔ عادی کافی است. سهمیهٔ روزانه `UrlFetchApp` برای حساب رایگان گوگل **۲۰٬۰۰۰ درخواست در روز** است (برای `Workspace` پولی ۱۰۰٬۰۰۰)، با محدودیت پاسخ ۵۰ مگابایت به ازای هر `fetch`. برای اکثر کاربران چند ساعت یوتیوب هم با یک `Deployment` کافی است. می‌توانید چند `Deployment` **در همان حساب** بسازید (هر بار `New deployment` یک `ID` جدید می‌دهد) — این روش در حالت `full` پهنای باند بهتری می‌دهد چون `pipeline depth` افزایش پیدا می‌کند و هر `Deployment` یک اجرای همزمان جدا در `Apps Script` می‌گیرد (تا سقف ۳۰ اجرای همزمان هر حساب). برای سهمیهٔ روزانهٔ بیشتر، در حساب‌های گوگل دیگر هم `Deployment` بسازید — هر حساب سهمیهٔ ۲۰ هزار درخواستی خودش را دارد. همهٔ `ID`ها را در فیلد `Apps Script ID(s)` وارد کنید — برنامه خودکار بینشان می‌چرخد. مرجع: <https://developers.google.com/apps-script/guides/services/quotas>
+یکی برای استفادهٔ عادی کافی است. سهمیهٔ روزانه `UrlFetchApp` برای حساب رایگان گوگل **۲۰٬۰۰۰ درخواست در روز** است (برای `Workspace` پولی ۱۰۰٬۰۰۰)، با محدودیت پاسخ ۵۰ مگابایت به ازای هر `fetch`. می‌توانید چند `Deployment` **در همان حساب** بسازید (هر بار `New deployment` یک `ID` جدید می‌دهد)؛ این کار برای چرخش و fallback مفید است، اما سقف اجرای همزمان و سهمیهٔ همان حساب را به اشتراک می‌گذارد. در حالت `full` همزمانی واقعی از `account_groups` می‌آید: برای سهمیه یا اجرای همزمان بیشتر، یک گروه حساب جدید با `auth_key` و `script_ids` خودش اضافه کنید. مرجع: <https://developers.google.com/apps-script/guides/services/quotas>
 
 **یوتوب کار می‌کند؟ ویدیو پخش می‌شود؟**
 صفحهٔ یوتوب سریع باز می‌شود (چون مستقیم از لبهٔ گوگل می‌آید). اما `chunk`های ویدیوی اصلی از `googlevideo.com` از طریق `Apps Script` می‌آیند و روزانه سهمیه دارند. برای تماشای گاه‌به‌گاه خوب است، برای ۱۰۸۰p پخش طولانی دردناک.
@@ -811,16 +837,13 @@ logread -e mhrv-f -f
 - ترافیک بین شما و گوگل، `TLS 1.3` استاندارد است
 - آنچه گوگل می‌بیند: آدرس `URL` و هدرهای درخواست شما (چون `Apps Script` به‌جای شما `fetch` می‌کند). این همان سطح اعتماد هر پروکسی میزبانی‌شده است — اگر قابل قبول نیست، از `VPN` روی سرور شخصی خودتان استفاده کنید
 
-### اعتبار
-
-پروژهٔ اصلی: <https://github.com/masterking32/MasterHttpRelayVPN> توسط [@masterking32](https://github.com/masterking32). ایده، پروتکل `Apps Script`، و معماری پروکسی همه متعلق به ایشان است. این پورت `Rust` فقط برای ساده‌تر کردن توزیع سمت کلاینت درست شده.
-
 ### حمایت از پروژه
 
 اگر `mhrv-f` برای شما مفید بوده و می‌خواهید از ادامهٔ توسعه حمایت کنید:
 
-### [❤️ حمایت در sh1n.org](https://sh1n.org/donate)
+<!-- لینک حمایت/دونیت حذف شد. -->
 
 کمک‌ها صرف هزینه‌های میزبانی، سرور `CI` اختصاصی، و ادامهٔ نگهداری پروژه می‌شود. ستاره دادن به ریپو هم یک راه رایگان برای نشان دادن اینه که پروژه ارزش ادامه دادن داره.
 
 </div>
+

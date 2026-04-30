@@ -1,0 +1,8 @@
+{
+  "name": "mhrv-f-vercel-json-relay",
+  "version": "1.0.0",
+  "description": "Vercel Edge JSON fetch relay for mhrv-f vercel_edge mode",
+  "private": true,
+  "type": "module",
+  "license": "MIT"
+}

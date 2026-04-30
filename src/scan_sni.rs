@@ -375,6 +375,7 @@ fn is_public_google_sni_candidate(domain: &str) -> bool {
         "youtube.com",
         "googleapis.com",
         "gstatic.com",
+        "gvt2.com",
         "ggpht.com",
         "withgoogle.com",
     ];
@@ -691,6 +692,7 @@ tus\":0}\r\n\
     fn only_public_google_hostnames_are_scan_sni_candidates() {
         assert!(is_public_google_sni_candidate("www.google.com"));
         assert!(is_public_google_sni_candidate("fonts.googleapis.com"));
+        assert!(is_public_google_sni_candidate("beacons.gvt2.com"));
         assert!(!is_public_google_sni_candidate("ams15s21-in-f14.1e100.net"));
         assert!(!is_public_google_sni_candidate(
             "82.221.107.34.bc.googleusercontent.com"

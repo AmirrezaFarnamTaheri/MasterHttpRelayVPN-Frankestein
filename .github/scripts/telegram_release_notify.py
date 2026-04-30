@@ -44,23 +44,85 @@ import sys
 import uuid
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _strip_leading_comments(body: str) -> str:
+    r"""Strip leading HTML comment blocks from `body`.
+
+    >>> _strip_leading_comments("<!-- a -->\n<!-- b -->\nbody")
+    'body'
+    >>> _strip_leading_comments("body\n<!-- mid-file comment -->")
+    'body\n<!-- mid-file comment -->'
+    """
+    return re.sub(r"^\s*(?:<!--.*?-->\s*)+", "", body, count=1, flags=re.S)
+
 
 def parse_changelog(path: str) -> tuple[str, str]:
     """Return (persian_body, english_body). Blank strings if file missing."""
     p = Path(path)
     if not p.is_file():
         return "", ""
-    body = p.read_text(encoding="utf-8")
-    # Strip a leading HTML comment block if present — the changelog
-    # template uses <!-- ... --> to document the format for editors;
-    # we don't want that echoed to Telegram.
-    body = re.sub(r"^\s*<!--.*?-->\s*", "", body, count=1, flags=re.S)
+    body = _strip_leading_comments(p.read_text(encoding="utf-8"))
     fa, sep, en = body.partition("\n---\n")
     if not sep:
         # No separator — treat everything as Persian (content-language
         # is a project preference rather than a hard rule).
         return body.strip(), ""
     return fa.strip(), en.strip()
+
+
+CAPTION_FA_NOTE_BUDGET = 500
+
+
+def _md_links_to_html(text: str) -> str:
+    """Convert tiny markdown fragments to Telegram HTML."""
+    text = re.sub(
+        r"\[([^\]]+)\]\(([^)]+)\)",
+        lambda m: f'<a href="{m.group(2)}">{m.group(1)}</a>',
+        text,
+    )
+    text = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", text)
+    text = re.sub(r"\*\*([^*\n]+)\*\*", r"<b>\1</b>", text)
+    return text
+
+
+def _extract_headlines(fa_section: str) -> str:
+    """Keep only the headline portion of Persian changelog bullets."""
+    headlines: list[str] = []
+    for line in fa_section.splitlines():
+        if not line.startswith("• "):
+            continue
+        body = line[2:]
+        cut_idx = body.find("): ")
+        if cut_idx > 0:
+            headline = body[: cut_idx + 1]
+        else:
+            cut_idx = body.find(": ")
+            headline = body[:cut_idx] if cut_idx > 0 else body
+        headlines.append(f"• {headline.rstrip()}")
+    return "\n".join(headlines)
+
+
+def build_caption_release_note(changelog_path: str) -> str:
+    """Build a compact Persian "what's new" block for the APK caption."""
+    fa, _en = parse_changelog(changelog_path)
+    if not fa:
+        return ""
+    headlines = _extract_headlines(fa)
+    note = headlines if headlines else fa.strip()
+    note = _md_links_to_html(note)
+    if len(note) > CAPTION_FA_NOTE_BUDGET:
+        truncated = note[:CAPTION_FA_NOTE_BUDGET]
+        last_bullet = truncated.rfind("\n•")
+        if last_bullet > 0:
+            note = truncated[:last_bullet].rstrip() + "\n…"
+        else:
+            note = truncated.rstrip() + "…"
+    return f"<blockquote>{note}</blockquote>"
 
 
 def sha256_of(path: str) -> str:
@@ -168,22 +230,53 @@ def main() -> int:
     # the tag (the workflow converts that into --with-changelog).
     ap.add_argument("--with-changelog", action="store_true",
                     help="Include the Persian+English changelog as a reply-threaded message.")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Render the caption and print it instead of posting. "
+                         "Skips token/chat_id checks.")
     args = ap.parse_args()
 
-    token = os.environ.get("BOT_TOKEN", "")
-    chat_id = os.environ.get("CHAT_ID", "")
-    if not token or not chat_id:
-        print("TELEGRAM secrets not present, skipping post.")
-        return 0
+    if not args.dry_run:
+        token = os.environ.get("BOT_TOKEN", "")
+        chat_id = os.environ.get("CHAT_ID", "")
+        if not token or not chat_id:
+            print("TELEGRAM secrets not present, skipping post.")
+            return 0
+    else:
+        token = ""
+        chat_id = ""
 
     ver = args.version
     sha = sha256_of(args.apk)
-    caption = (
-        f"<b>mhrv-f Android v{ver}</b>\n\n"
-        f"SHA-256: <code>{sha}</code>\n"
-        f"https://github.com/{args.repo}\n"
-        f"https://github.com/{args.repo}/releases/tag/v{ver}"
-    )
+    fa_note = build_caption_release_note(args.changelog)
+    caption_parts = [
+        f"<b>mhrv-f Android v{ver}</b>",
+        "",
+        f"SHA-256: <code>{sha}</code>",
+    ]
+    if fa_note:
+        caption_parts.extend(["", fa_note])
+    caption_parts.extend([
+        "",
+        "مخزن گیتهاب + راهنمای کامل فارسی:",
+        f"https://github.com/{args.repo}",
+        "",
+        "لینک این نسخه برای دریافت نسخه‌های دسکتاپ، اندروید و روتر:",
+        f"https://github.com/{args.repo}/releases/tag/v{ver}",
+    ])
+    caption = "\n".join(caption_parts)
+
+    if args.dry_run:
+        print(f"--- DRY RUN: caption ({len(caption)} chars) ---")
+        print(caption)
+        print("--- END DRY RUN ---")
+        if args.with_changelog:
+            fa, en = parse_changelog(args.changelog)
+            print(
+                f"\nWould reply with changelog "
+                f"(fa: {len(fa) if fa else 0} chars, "
+                f"en: {len(en) if en else 0} chars)"
+            )
+        return 0
 
     doc_mid = send_document(token, chat_id, args.apk, caption)
     print(f"sendDocument OK, message_id={doc_mid}")

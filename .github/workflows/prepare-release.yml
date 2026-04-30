@@ -1,0 +1,168 @@
+# Prepare a release branch: bump version strings, prefill changelog from the
+# release-drafter `next` draft, and open a PR. After merging, push the vX.Y.Z tag
+# and release.yml builds/publishes artifacts.
+name: prepare-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New version to release, without leading v. Example: 1.2.14'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          VER="${INPUT_VERSION#v}"
+          if ! [[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version '$VER' is not in X.Y.Z format"
+            exit 1
+          fi
+          if git rev-parse "v${VER}" >/dev/null 2>&1; then
+            echo "::error::tag v${VER} already exists"
+            exit 1
+          fi
+          BRANCH="release/v${VER}"
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "::error::branch $BRANCH already exists on origin"
+            exit 1
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump Cargo.toml + Cargo.lock
+        env:
+          NEW_VER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os, pathlib, re, sys
+          ver = os.environ["NEW_VER"]
+
+          p = pathlib.Path("Cargo.toml")
+          src = p.read_text(encoding="utf-8")
+          new, n = re.subn(
+              r'(\[package\]\s+name = "mhrv-f"\s+version = ")[0-9.]+(")',
+              rf'\g<1>{ver}\g<2>',
+              src,
+              count=1,
+              flags=re.S,
+          )
+          if n != 1:
+              sys.exit("ERROR: mhrv-f package version not found in Cargo.toml")
+          p.write_text(new, encoding="utf-8")
+
+          p = pathlib.Path("Cargo.lock")
+          src = p.read_text(encoding="utf-8")
+          new, n = re.subn(
+              r'(name = "mhrv-f"\s+version = ")[0-9.]+(")',
+              rf'\g<1>{ver}\g<2>',
+              src,
+              count=1,
+              flags=re.S,
+          )
+          if n != 1:
+              sys.exit("ERROR: mhrv-f package version not found in Cargo.lock")
+          p.write_text(new, encoding="utf-8")
+          PY
+
+      - name: Bump Android version
+        env:
+          NEW_VER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os, pathlib, re, sys
+          ver = os.environ["NEW_VER"]
+          p = pathlib.Path("android/app/build.gradle.kts")
+          src = p.read_text(encoding="utf-8")
+          m = re.search(r'versionCode\s*=\s*(\d+)', src)
+          if not m:
+              sys.exit("ERROR: versionCode not found")
+          src = src[:m.start(1)] + str(int(m.group(1)) + 1) + src[m.end(1):]
+          src, n = re.subn(r'versionName\s*=\s*"[^"]+"', f'versionName = "{ver}"', src, count=1)
+          if n != 1:
+              sys.exit("ERROR: versionName not found")
+          p.write_text(src, encoding="utf-8")
+          PY
+
+      - name: Fetch release-drafter draft body
+        id: draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BODY=$(gh release view next --repo "${{ github.repository }}" \
+                   --json body,isDraft --jq 'select(.isDraft) | .body' 2>/dev/null || true)
+          {
+            echo 'body<<__DRAFT_BODY_EOF__'
+            printf '%s\n' "$BODY"
+            echo '__DRAFT_BODY_EOF__'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write changelog stub
+        env:
+          NEW_VER: ${{ steps.ver.outputs.version }}
+          DRAFT_BODY: ${{ steps.draft.outputs.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p docs/changelog
+          OUT="docs/changelog/v${NEW_VER}.md"
+          {
+            echo '<!-- see docs/changelog/v1.1.0.md for the file format: Persian, then `---`, then English. -->'
+            echo '[FA] translate the English bullets below into Persian and replace this line.'
+            echo
+            echo '---'
+            if [ -n "$DRAFT_BODY" ]; then
+              printf '%s\n' "$DRAFT_BODY" \
+                | sed -E 's/^(• )(feat|fix|chore|docs?|refactor|perf|test|build|ci|style|revert)(\([^)]*\))?!?: */\1/i'
+            fi
+          } > "$OUT"
+
+      - name: Commit, push, and open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VER: ${{ steps.ver.outputs.version }}
+          BRANCH: ${{ steps.ver.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add Cargo.toml Cargo.lock android/app/build.gradle.kts "docs/changelog/v${NEW_VER}.md"
+          git commit -m "release: prepare v${NEW_VER}"
+          git push -u origin "$BRANCH"
+          cat > /tmp/pr-body.md <<MSG
+          Automated release prep for **v${NEW_VER}**.
+
+          Before merging, replace the Persian draft line and every \`<expand>\`
+          marker in \`docs/changelog/v${NEW_VER}.md\`.
+
+          After merging:
+          1. \`git checkout main && git pull\`
+          2. \`git tag v${NEW_VER} && git push origin v${NEW_VER}\`
+          3. \`release.yml\` builds artifacts, creates the GitHub release, and posts Telegram if enabled.
+          MSG
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "release: prepare v${NEW_VER}" \
+            --label "release-prep" \
+            --body-file /tmp/pr-body.md

@@ -5,11 +5,12 @@ Full guide for the Android build of **MasterHttpRelayVPN-Frankestein** (the same
 - [Overview](#overview)
 - [Requirements](#requirements)
 - [1. Install the APK](#1-install-the-apk)
-- [2. Deploy the Apps Script](#2-deploy-the-apps-script)
+- [2. Deploy a relay backend](#2-deploy-a-relay-backend)
 - [3. Enter your config in the app](#3-enter-your-config-in-the-app)
 - [4. Run the SNI tester](#4-run-the-sni-tester)
 - [5. Install the MITM certificate](#5-install-the-mitm-certificate)
 - [6. Start the tunnel](#6-start-the-tunnel)
+- [Per-app routing and LAN sharing](#per-app-routing-and-lan-sharing)
 - [UI quick reference](#ui-quick-reference)
 - [Known limitations](#known-limitations)
 - [Troubleshooting](#troubleshooting)
@@ -19,7 +20,7 @@ Full guide for the Android build of **MasterHttpRelayVPN-Frankestein** (the same
 
 ## Overview
 
-The Android app is the exact same `mhrv-f` Rust crate that powers the desktop build, wrapped in a Compose UI and fed a TUN file descriptor via `VpnService` + [`tun2proxy`](https://crates.io/crates/tun2proxy). Every app on the device is routed through the proxy — no per-app setup.
+The Android app is the exact same `mhrv-f` Rust crate that powers the desktop build, wrapped in a Compose UI and fed a TUN file descriptor via `VpnService` + [`tun2proxy`](https://crates.io/crates/tun2proxy). It exposes the same practical backend choices as desktop: Apps Script, Serverless JSON on Vercel/Netlify, Direct bootstrap, and Full tunnel.
 
 ```
 Any app on the device
@@ -32,12 +33,12 @@ VpnService TUN  ──► tun2proxy (in-process)
                                                  │
                          ┌───────────────────────┤
                          ▼                       ▼
-               sni-rewrite tunnel        Apps Script relay
+               sni-rewrite tunnel        selected relay backend
                (Google-owned hosts       (everything else,
-                direct to google_ip)     via your /exec URL)
+                direct to google_ip)     Apps Script / Edge JSON / full node)
 ```
 
-Setup time: **~10 minutes** if your Apps Script deployment already exists, ~15 min if you're deploying fresh.
+Setup time: **~10 minutes** if your relay backend already exists, ~15 min if you're deploying fresh.
 
 ---
 
@@ -46,19 +47,20 @@ Setup time: **~10 minutes** if your Apps Script deployment already exists, ~15 m
 | | |
 |---|---|
 | **Android version** | 7.0 (API 24) or later |
-| **Device architecture** | Any. The APK is universal: arm64-v8a, armeabi-v7a, x86_64, x86 |
-| **Google account** | Yes — you'll deploy the Apps Script under it. A throwaway Gmail works |
+| **Device architecture** | Any. The release includes a universal APK plus smaller ABI-specific APKs for arm64-v8a, armeabi-v7a, x86_64, and x86 |
+| **Relay backend** | Apps Script deployment, Vercel/Netlify JSON relay, or full tunnel-node setup |
+| **Google account** | Required for Apps Script and Full tunnel; not required for Vercel/Netlify Serverless JSON |
 | **Screen lock** | PIN, pattern, password, or biometric + fallback. **Required by Android for user-CA install.** Can be removed after install; the cert stays trusted |
 | **Data usage** | ~5 MB for the APK, then ~2 MB overhead per GB of browsing (base64 + JSON wrapping) |
 
-> **Scope note.** mhrv-f relays through Apps Script. That's what makes it cheap and DPI-resilient, but it's also what imposes the [known limitations](#known-limitations) below. If you're evaluating against a real VPN (WireGuard/Tailscale/OpenVPN), skim that section first.
+> **Scope note.** Apps Script and Serverless JSON are HTTP fetch relays, not WireGuard-style IP VPNs. Full tunnel is closer to a complete tunnel but needs your own node. Skim [known limitations](#known-limitations) before expecting every app and protocol to behave like a commercial VPN.
 
 ---
 
 ## 1. Install the APK
 
 1. On your phone, open the browser and go to <https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/releases/latest>.
-2. Download `mhrv-f-android-universal-v*.apk`.
+2. Download `mhrv-f-android-universal-v*.apk`, or the smaller APK matching your device ABI if the release offers one.
 3. Tap the download to open the installer.
 4. When Android asks **"Allow this source to install apps?"**:
    - Tap **Settings**
@@ -70,9 +72,20 @@ Setup time: **~10 minutes** if your Apps Script deployment already exists, ~15 m
 
 ---
 
-## 2. Deploy the Apps Script
+## 2. Deploy a relay backend
 
-Skip this step if you already have a working `/exec` URL.
+Skip this step if you already have a working backend for the mode you chose.
+
+Choose one:
+
+| Mode | What to deploy | What the Android app needs |
+|---|---|---|
+| Apps Script | `assets/apps_script/Code.gs` as a Google Web app | one or more `/exec` URLs plus `auth_key` |
+| Serverless JSON | `tools/vercel-json-relay` or `tools/netlify-json-relay` | Base URL, relay path `/api/api`, and `AUTH_KEY` |
+| Direct | Nothing | working `google_ip` / `front_domain` only |
+| Full tunnel | `assets/apps_script/CodeFull.gs` plus `tunnel-node` | Apps Script URL/auth plus the node settings from the desktop docs |
+
+### Apps Script
 
 Do this on a laptop — it's a browser-heavy flow that's painful on a phone.
 
@@ -83,7 +96,7 @@ Do this on a laptop — it's a browser-heavy flow that's painful on a phone.
    ```js
    const AUTH_KEY = "CHANGE_ME_TO_A_STRONG_SECRET";
    ```
-   Replace the placeholder with a strong random secret (20+ chars, letters + digits). Save this value — you'll paste it into the app too.
+   Replace the example value with a strong random secret (20+ chars, letters + digits). Save this value — you'll paste it into the app too.
 5. **File → Save** (⌘S / Ctrl+S). Name the project something like `mhrv-relay`.
 6. **Deploy → New deployment**.
 7. Click the gear icon → **Web app**. Fill in:
@@ -99,6 +112,22 @@ Do this on a laptop — it's a browser-heavy flow that's painful on a phone.
    - On "Google hasn't verified this app" → **Advanced** → **Go to &lt;project name&gt; (unsafe)** → **Allow**
 9. Copy the **Web app URL**. It looks like `https://script.google.com/macros/s/AKfyc.../exec`.
 
+### Serverless JSON on Vercel or Netlify
+
+Use this when Apps Script is unavailable or you want a no-VPS backend that is separate from Google Apps Script.
+
+1. Deploy [`tools/vercel-json-relay`](../tools/vercel-json-relay/README.md) to Vercel, or [`tools/netlify-json-relay`](../tools/netlify-json-relay/README.md) to Netlify.
+2. Set the platform environment variable `AUTH_KEY` to a long random secret.
+3. Confirm the health endpoint returns JSON:
+   - Vercel/Netlify Base URL + `/api/api`
+   - expected shape: `{"ok":true,...}`
+4. In Android, choose **Serverless JSON (no VPS)** and paste:
+   - **Base URL**: only the site origin, such as `https://your-site.netlify.app`
+   - **AUTH_KEY**: the same platform secret
+   - **Relay path**: `/api/api`
+
+This mode still uses the local MITM certificate for HTTPS apps, just like Apps Script.
+
 <details>
 <summary>What the script does</summary>
 
@@ -111,14 +140,26 @@ It receives `POST { method, url, headers, body_base64 }` from our proxy, calls `
 
 Back on the phone:
 
+Pick the mode first. The credential fields below are mode-specific; leave fields for other modes as-is so you can switch back later without losing them.
+
 | Field | What to enter |
 |---|---|
+| **Mode** | Apps Script, Serverless JSON, Direct, or Full tunnel |
+| **Base URL / AUTH_KEY / Relay path** | Serverless JSON only: Vercel or Netlify site origin, matching `AUTH_KEY`, and `/api/api` |
 | **Deployment URL(s) or script ID(s)** | The `/exec` URL you copied. You can paste multiple — one per line — and the proxy will round-robin between them (useful when you hit the 20k/day per-script quota) |
 | **auth_key** | The exact string you put in `AUTH_KEY` inside `Code.gs` |
 | **google_ip** | Leave the default. The next step will auto-populate it |
 | **front_domain** | Leave at `www.google.com` |
 
 Tap anywhere outside the text fields to dismiss the keyboard.
+
+Important distinction: Android has one compact Apps Script credential area,
+while desktop exposes the same idea as account groups. One group normally means
+one Google account, one `AUTH_KEY`, and one quota pool. Multiple deployment IDs
+from that same account help rotation/fallback, but they still share that quota.
+Multiple groups on desktop mean multiple accounts or backup identities. If you
+need more capacity, add accounts/deployments before raising aggressive advanced
+settings.
 
 ---
 
@@ -198,8 +239,28 @@ Expand **Live logs** to watch the traffic flow:
 | **Advanced** | Collapsible | verify_ssl, log_level, parallel_relay, upstream_socks5 |
 | **Start / Stop** | Bottom row | 2-second debounce between taps |
 | **Install MITM certificate** | Below Start/Stop | Save PEM → open Settings → search "CA certificate" |
+| **Usage today (estimated)** | Below the Install button while connected | Local estimate of this device's Apps Script calls/bytes and reset countdown |
 | **Live logs** | Collapsible (below the Install button) | 500ms poll of the proxy's log ring buffer |
 | **v1.0.x (version badge)** | Top bar, right | Tap to check GitHub for a newer release |
+
+---
+
+## Per-app routing and LAN sharing
+
+Android has two routing models:
+
+- **VPN (TUN)**: uses Android `VpnService`. App splitting is native here:
+  route all apps, only selected apps, or all except selected apps.
+- **Proxy-only**: no system VPN. Apps opt in only if their own settings, or the
+  Wi-Fi proxy settings, point to HTTP `127.0.0.1:<http-port>` or SOCKS5
+  `127.0.0.1:<socks5-port>`.
+
+Advanced **Share proxy on LAN** binds listeners to `0.0.0.0` so trusted devices
+on the same Wi-Fi can use the phone as an HTTP/SOCKS proxy. This is reliable
+proxy sharing; Android vendor behavior for forwarding VPN traffic over hotspot
+varies, so configure the other device's proxy explicitly when possible.
+
+Full guide: [`docs/sharing-and-per-app-routing.md`](sharing-and-per-app-routing.md).
 
 ---
 
@@ -214,7 +275,7 @@ On Cloudflare-protected sites that challenge **every** request, you'll solve the
 | Factor | Normal browser | Apps Script relay |
 |---|---|---|
 | Egress IP | Stable (your ISP) | Rotates across Google's datacenter pool per request |
-| User-Agent | Chrome's | Fixed `Google-Apps-Script` (locked by Google; we can't override) |
+| User-Agent | Chrome's | Best-effort browser UA forwarding; some Apps Script fetch paths still fingerprint like Google/UrlFetchApp |
 | TLS JA3/JA4 | Chrome's | Google-datacenter's |
 
 Cloudflare's `cf_clearance` cookie is bound to the `(IP, UA, JA3)` tuple the challenge was solved against. Different IP next request → re-challenge.
@@ -231,12 +292,22 @@ What to do:
 - Add multiple deployment URLs / script IDs (one per line) and/or multiple `account_groups` so the app can spread load.
 - If you keep hitting quota, consider lowering load (close heavy tabs) or adding a second Google account group.
 - Advanced: `mhrv-f` supports range-parallel downloads for large GETs; for `googlevideo.com` URLs that include `clen=`, it uses larger chunks and caps in-flight concurrency to reduce Apps Script call count.
+- If logs show `sabr=1` in `googlevideo.com` URLs and playback stalls near 60 seconds, Apps Script buffering is the bottleneck. Full mode avoids this by streaming through `tunnel-node`.
 
 **Sites that only gate the first page load** (most of CF's Bot Fight Mode customers) work fine after one solve. Sites that challenge every request (crypto exchanges, adult, some forums) fundamentally can't hold a session through this architecture — use a different tunnel for those.
 
-### UDP / QUIC (HTTP/3) doesn't go through
+### LAN sharing
 
-The SOCKS5 listener only handles `CONNECT`, not `UDP ASSOCIATE`. Chrome tries HTTP/3 first and falls back to HTTP/2 over TCP, which works fine. Effect: slightly slower first connect, everything else normal.
+Advanced settings include **Share proxy on LAN**. It changes `listen_host` from
+`127.0.0.1` to `0.0.0.0`, so other devices on the same Wi-Fi can point their
+HTTP proxy at `<phone-lan-ip>:8080` or SOCKS5 at `<phone-lan-ip>:1081`.
+
+Use it only on trusted networks: anyone who can reach the listener can spend
+your Apps Script quota.
+
+### UDP / QUIC (HTTP/3)
+
+In `full` mode, the SOCKS5 listener handles `UDP ASSOCIATE` and tunnels UDP datagrams through Apps Script to `tunnel-node`, which then sends real UDP to the destination. Your ISP still only sees HTTPS to Google. In `apps_script` mode, UDP still falls back the old way: Chrome tries HTTP/3 first and then uses HTTP/2 over TCP.
 
 ### IPv6 leaks
 
@@ -244,7 +315,7 @@ The TUN only routes IPv4 (`addRoute 0.0.0.0/0`). IPv6 goes out your normal inter
 
 ### Apps Script daily quota
 
-Each `/exec` has a daily execution limit (20k/day for consumer Google accounts, higher for Workspace). Heavy streaming or infinite-scroll sites burn through it. Mitigation: deploy 2–3 scripts, paste all their `/exec` URLs into the app, one per line — the proxy round-robins.
+Each `/exec` has a daily execution limit (20k/day for consumer Google accounts, higher for Workspace). Heavy streaming or infinite-scroll sites burn through it. The Android usage card gives a local estimate for this device; the Google Apps Script dashboard remains authoritative. Mitigation: deploy 2–3 scripts, paste all their `/exec` URLs into the app, one per line — the proxy round-robins.
 
 ### Most non-browser apps ignore user CAs
 

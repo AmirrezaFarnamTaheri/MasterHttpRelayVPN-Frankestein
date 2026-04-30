@@ -1,0 +1,46 @@
+# Updates the draft GitHub release on every push to main, and applies
+# Conventional-Commit-derived labels to incoming PRs. Config lives in
+# `.github/release-drafter.yml`.
+name: release-drafter
+
+on:
+  push:
+    branches: [main]
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  update-draft:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure autolabeler labels exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          while IFS='|' read -r name color desc; do
+            gh label create "$name" --color "$color" --description "$desc" \
+              --repo "${{ github.repository }}" 2>/dev/null || true
+          done <<'LABELS'
+          release-prep|ededed|Automated version-bump PR; excluded from release-drafter changelog
+          skip-changelog|ededed|Exclude this PR from release-drafter output
+          type: feature|a2eeef|feat: PR — auto-applied by release-drafter
+          type: fix|d73a4a|fix: PR — auto-applied by release-drafter
+          type: chore|cfd3d7|chore: PR — auto-applied by release-drafter
+          type: docs|0075ca|docs: PR — auto-applied by release-drafter
+          type: refactor|fbca04|refactor: PR — auto-applied by release-drafter
+          type: perf|c2e0c6|perf: PR — auto-applied by release-drafter
+          type: ci|d4c5f9|ci: PR — auto-applied by release-drafter
+          LABELS
+
+      - uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

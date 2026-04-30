@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>XHTTP VLESS Generator</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f8fb;
+        --panel: #ffffff;
+        --text: #151922;
+        --muted: #586476;
+        --line: #d9e0ea;
+        --accent: #0d7f7a;
+        --accent-strong: #09645f;
+        --warn: #8a5a00;
+        --field: #f0f4f8;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+      }
+      main {
+        width: min(980px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 32px 0;
+      }
+      header {
+        margin-bottom: 24px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(28px, 5vw, 44px);
+        letter-spacing: 0;
+      }
+      p {
+        color: var(--muted);
+        line-height: 1.6;
+        margin: 0;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 12px 34px rgba(20, 31, 46, 0.08);
+      }
+      label {
+        display: block;
+        margin: 14px 0 7px;
+        font-weight: 700;
+      }
+      input, textarea, select {
+        width: 100%;
+        border: 1px solid var(--line);
+        background: var(--field);
+        color: var(--text);
+        border-radius: 7px;
+        padding: 12px;
+        font: inherit;
+      }
+      textarea {
+        min-height: 176px;
+        resize: vertical;
+        font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .check {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        margin-top: 14px;
+        background: color-mix(in srgb, var(--field) 78%, transparent);
+      }
+      .check input { width: auto; margin-top: 3px; }
+      .hint {
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .warn {
+        border-left: 4px solid #d99a00;
+        padding: 12px;
+        background: color-mix(in srgb, #ffd36a 16%, transparent);
+        color: var(--warn);
+        margin: 14px 0 0;
+        border-radius: 6px;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      button {
+        border: 0;
+        background: var(--accent);
+        color: white;
+        border-radius: 7px;
+        padding: 12px 14px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: transparent;
+        color: var(--accent-strong);
+        border: 1px solid var(--accent);
+      }
+      #output {
+        min-height: 430px;
+      }
+      @media (max-width: 780px) {
+        .layout { grid-template-columns: 1fr; }
+        .row { grid-template-columns: 1fr; }
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f141c;
+          --panel: #151b25;
+          --text: #eef2f7;
+          --muted: #aeb9c8;
+          --line: #2b3544;
+          --accent: #25a99f;
+          --accent-strong: #59d2c9;
+          --warn: #ffd36a;
+          --field: #1d2531;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>XHTTP VLESS Generator</h1>
+        <p>Create Xray/V2Ray VLESS + XHTTP share links for the Netlify or Vercel relay helper. The generated links keep <code>Host</code> on your deployed site and rotate tested Address/SNI candidates.</p>
+      </header>
+      <div class="layout">
+        <section>
+          <label for="platform">Relay platform</label>
+          <select id="platform">
+            <option value="netlify" selected>Netlify XHTTP</option>
+            <option value="vercel">Vercel XHTTP</option>
+          </select>
+          <div class="hint">The platform controls the default Host placeholder, path, and Address/SNI candidates. The generated link format is the same XHTTP shape.</div>
+
+          <label for="uuid">VLESS UUID</label>
+          <input id="uuid" autocomplete="off" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
+          <div class="hint">Use the UUID configured on your real Xray backend.</div>
+
+          <label for="relayHost">Relay host</label>
+          <input id="relayHost" autocomplete="off" spellcheck="false" placeholder="your-site.netlify.app">
+          <div class="hint">This becomes the XHTTP <code>host</code> value and must identify your deployed relay.</div>
+
+          <div class="row">
+            <div>
+              <label for="path">XHTTP path</label>
+              <input id="path" autocomplete="off" spellcheck="false" value="/p4r34m">
+            </div>
+            <div>
+              <label for="namePrefix">Name prefix</label>
+              <input id="namePrefix" autocomplete="off" spellcheck="false" value="netlify-xhttp">
+            </div>
+          </div>
+
+          <label for="candidates">Address/SNI candidates</label>
+          <textarea id="candidates" spellcheck="false">kubernetes.io
+helm.sh
+letsencrypt.org
+docs.helm.sh
+kubectl.docs.kubernetes.io
+blog.helm.sh
+kind.sigs.k8s.io
+cluster-api.sigs.k8s.io
+krew.sigs.k8s.io
+gateway-api.sigs.k8s.io
+scheduler-plugins.sigs.k8s.io
+kustomize.sigs.k8s.io
+image-builder.sigs.k8s.io</textarea>
+
+          <div class="check">
+            <input type="checkbox" id="allowInsecure" checked>
+            <div>
+              <strong>Set allowInsecure=1 for mismatched-front testing</strong>
+              <div class="hint">Turn this off when Address, SNI, and Host are all your own Netlify hostname or custom domain.</div>
+            </div>
+          </div>
+
+          <div class="warn">Only use your own backend in <code>TARGET_DOMAIN</code>. Do not depend on random public VLESS examples or third-party backend domains.</div>
+
+          <div class="actions">
+            <button id="generate" type="button">Generate</button>
+            <button class="secondary" id="copy" type="button">Copy</button>
+            <button class="secondary" id="download" type="button">Download</button>
+          </div>
+        </section>
+
+        <section>
+          <label for="output">Generated share links</label>
+          <textarea id="output" spellcheck="false" readonly></textarea>
+          <div class="hint" id="status">Fill the fields, then generate. One link is created per Address/SNI candidate.</div>
+        </section>
+      </div>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      function normalizeHost(value) {
+        return value.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+      }
+
+      function normalizePath(value) {
+        const trimmed = value.trim() || "/p4r34m";
+        return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
+      }
+
+      function generate() {
+        const uuid = $("uuid").value.trim() || "YOUR-UUID";
+        const host = normalizeHost($("relayHost").value);
+        const path = normalizePath($("path").value);
+        const prefix = $("namePrefix").value.trim() || "netlify-xhttp";
+        const allow = $("allowInsecure").checked ? "1" : "0";
+        const candidates = $("candidates").value
+          .split(/\r?\n/)
+          .map(normalizeHost)
+          .filter(Boolean);
+
+        if (!host) {
+          $("status").textContent = "Netlify host is required.";
+          $("output").value = "";
+          return "";
+        }
+        if (candidates.length === 0) {
+          $("status").textContent = "Add at least one Address/SNI candidate.";
+          $("output").value = "";
+          return "";
+        }
+
+        const encodedPath = encodeURIComponent(path);
+        const lines = candidates.map((candidate) => {
+          const tag = encodeURIComponent(`${prefix}-${candidate}`);
+          return `vless://${uuid}@${candidate}:443?encryption=none&security=tls&sni=${candidate}&alpn=h2%2Chttp%2F1.1&insecure=${allow}&allowInsecure=${allow}&type=xhttp&host=${host}&path=${encodedPath}&mode=auto#${tag}`;
+        });
+        const output = lines.join("\n");
+        $("output").value = output;
+        $("status").textContent = `Generated ${lines.length} link(s).`;
+        return output;
+      }
+
+      function download() {
+        const output = generate();
+        if (!output) return;
+        const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "netlify-vless-links.txt";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(link.href);
+      }
+
+      async function copy() {
+        const output = generate();
+        if (!output) return;
+        await navigator.clipboard.writeText(output);
+        $("status").textContent = "Copied generated links to clipboard.";
+      }
+
+      $("generate").addEventListener("click", generate);
+      $("download").addEventListener("click", download);
+      $("copy").addEventListener("click", copy);
+      $("platform").addEventListener("change", () => {
+        const platform = $("platform").value;
+        const data = presets[platform];
+        $("relayHost").placeholder = data.hostPlaceholder;
+        $("path").value = data.path;
+        $("namePrefix").value = data.prefix;
+        $("candidates").value = data.candidates.join("\n");
+        $("status").textContent = `${data.label} preset loaded. Replace UUID, Host, and path with your backend values.`;
+        $("output").value = "";
+      });
+
+      const presets = {
+        netlify: {
+          label: "Netlify XHTTP",
+          prefix: "netlify-xhttp",
+          path: "/p4r34m",
+          hostPlaceholder: "your-site.netlify.app",
+          candidates: [
+            "kubernetes.io",
+            "helm.sh",
+            "letsencrypt.org",
+            "docs.helm.sh",
+            "kubectl.docs.kubernetes.io",
+            "blog.helm.sh",
+            "kind.sigs.k8s.io",
+            "cluster-api.sigs.k8s.io",
+            "krew.sigs.k8s.io",
+            "gateway-api.sigs.k8s.io",
+            "scheduler-plugins.sigs.k8s.io",
+            "kustomize.sigs.k8s.io",
+            "image-builder.sigs.k8s.io",
+          ],
+        },
+        vercel: {
+          label: "Vercel XHTTP",
+          prefix: "vercel-xhttp",
+          path: "/yourpath",
+          hostPlaceholder: "your-project.vercel.app",
+          candidates: [
+            "community.vercel.com",
+            "analytics.vercel.com",
+            "botid.vercel.com",
+            "blog.vercel.com",
+            "app.vercel.com",
+            "api.vercel.com",
+            "ai.vercel.com",
+            "cursor.com",
+            "nextjs.org",
+            "react.dev",
+          ],
+        },
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "cloudflare-worker-json-relay",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker exit relay for mhrv-f Apps Script mode",
+  "private": true,
+  "license": "MIT",
+  "type": "module"
+}

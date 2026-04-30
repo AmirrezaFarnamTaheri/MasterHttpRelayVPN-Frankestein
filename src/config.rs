@@ -1,4 +1,6 @@
+use rustls::pki_types::ServerName;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -14,14 +16,16 @@ pub enum ConfigError {
 
 /// Operating mode. `AppsScript` is the full client — MITMs TLS locally and
 /// relays HTTP/HTTPS through a user-deployed Apps Script endpoint.
-/// `GoogleOnly` is a bootstrap: no relay, no Apps Script config needed,
-/// only the SNI-rewrite tunnel to the Google edge is active. Intended for
-/// users who need to reach `script.google.com` to deploy `Code.gs` in the
-/// first place.
+/// `Direct` is a no-relay path: only the SNI-rewrite tunnel is active,
+/// targeting Google's edge by default plus any user-configured
+/// `fronting_groups`. It is useful as a bootstrap for reaching
+/// `script.google.com` before an Apps Script relay exists, and as a
+/// standalone mode for users who only need fronted CDN/Google targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     AppsScript,
-    GoogleOnly,
+    VercelEdge,
+    Direct,
     Full,
 }
 
@@ -29,7 +33,8 @@ impl Mode {
     pub fn as_str(self) -> &'static str {
         match self {
             Mode::AppsScript => "apps_script",
-            Mode::GoogleOnly => "google_only",
+            Mode::VercelEdge => "vercel_edge",
+            Mode::Direct => "direct",
             Mode::Full => "full",
         }
     }
@@ -45,11 +50,40 @@ pub enum ScriptId {
 
 impl ScriptId {
     pub fn into_vec(self) -> Vec<String> {
-        match self {
+        let raw = match self {
             ScriptId::One(s) => vec![s],
             ScriptId::Many(v) => v,
+        };
+        let mut out = Vec::new();
+        for id in raw {
+            let id = normalize_script_id(&id);
+            if !id.is_empty() && !out.iter().any(|seen| seen == &id) {
+                out.push(id);
+            }
         }
+        out
     }
+}
+
+fn normalize_script_id(input: &str) -> String {
+    let mut s = input.trim();
+    if s.is_empty() {
+        return String::new();
+    }
+
+    // Accept both bare deployment IDs and full Apps Script deployment URLs.
+    // Older Python/Android configs stored whichever the user pasted; runtime
+    // request paths must always contain only the ID.
+    if let Some((_, tail)) = s.split_once("/macros/s/") {
+        s = tail;
+    }
+    if let Some((head, _)) = s.split_once('/') {
+        s = head;
+    }
+    if let Some((head, _)) = s.split_once('?') {
+        s = head;
+    }
+    s.trim().to_string()
 }
 
 fn default_config_version() -> u32 {
@@ -87,6 +121,59 @@ pub struct AccountGroup {
     pub enabled: bool,
 }
 
+fn default_vercel_relay_path() -> String {
+    "/api/api".into()
+}
+
+fn default_vercel_verify_tls() -> bool {
+    true
+}
+
+fn default_vercel_max_body_bytes() -> usize {
+    4 * 1024 * 1024
+}
+
+/// Native serverless Edge JSON relay configuration.
+///
+/// This is intentionally separate from `account_groups`: Apps Script accounts
+/// rotate deployment IDs and quotas, while Vercel is a single authenticated
+/// fetch endpoint with different limits and trust assumptions.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct VercelConfig {
+    /// Deployment origin, for example `https://my-relay.vercel.app` or
+    /// `https://my-relay.netlify.app`.
+    #[serde(default)]
+    pub base_url: String,
+    /// Edge function path. Defaults to the bundled tool's `/api/api`.
+    #[serde(default = "default_vercel_relay_path")]
+    pub relay_path: String,
+    /// Shared secret. Must match AUTH_KEY in the serverless project.
+    #[serde(default)]
+    pub auth_key: String,
+    /// Whether the client verifies the relay TLS certificate.
+    #[serde(default = "default_vercel_verify_tls")]
+    pub verify_tls: bool,
+    /// Upper bound for a single decoded request body sent to the relay.
+    #[serde(default = "default_vercel_max_body_bytes")]
+    pub max_body_bytes: usize,
+    /// Reserved for the JSON batch envelope `{k,q:[...]}`.
+    #[serde(default)]
+    pub enable_batching: bool,
+}
+
+impl Default for VercelConfig {
+    fn default() -> Self {
+        Self {
+            base_url: String::new(),
+            relay_path: default_vercel_relay_path(),
+            auth_key: String::new(),
+            verify_tls: default_vercel_verify_tls(),
+            max_body_bytes: default_vercel_max_body_bytes(),
+            enable_batching: false,
+        }
+    }
+}
+
 pub const CURRENT_CONFIG_VERSION: u32 = 1;
 
 /// Per-domain overrides for routing and performance knobs.
@@ -109,9 +196,26 @@ pub struct DomainOverride {
     pub never_chunk: bool,
 }
 
+/// One multi-edge fronting group. Multi-tenant CDNs can host many sites on one
+/// edge pool and dispatch by the inner HTTP Host header after TLS terminates.
+/// A group lets the local MITM path re-encrypt to `ip` while using `sni` as
+/// the upstream TLS name, then send the original requested host inside TLS.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FrontingGroup {
+    /// Human-readable label used in logs and docs.
+    pub name: String,
+    /// Edge IP address to dial.
+    pub ip: String,
+    /// Upstream TLS SNI. Must be a real DNS name served by that edge.
+    pub sni: String,
+    /// Domains routed through this edge. Entries match exact host and
+    /// dot-anchored subdomains, case-insensitively.
+    pub domains: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
-    /// Schema version for forward-compatible config migrations.
+    /// Schema version for the config file format.
     #[serde(default = "default_config_version")]
     pub config_version: u32,
     pub mode: String,
@@ -151,6 +255,15 @@ pub struct Config {
     /// script IDs.
     #[serde(default)]
     pub parallel_relay: u8,
+
+    /// Adaptive full-mode batch coalescing: after each tunnel op arrives,
+    /// wait this many milliseconds for more ops before firing the batch.
+    /// The timer resets on each arrival. 0 = compiled default.
+    #[serde(default)]
+    pub coalesce_step_ms: u16,
+    /// Hard cap on total adaptive coalescing wait. 0 = compiled default.
+    #[serde(default)]
+    pub coalesce_max_ms: u16,
 
     /// Optional client-side rate limit for Apps Script relay calls.
     /// Useful as a soft resource governor (avoid bursty quota spikes).
@@ -193,12 +306,32 @@ pub struct Config {
     /// derived from runtime profile.
     #[serde(default)]
     pub relay_request_timeout_secs: Option<u64>,
+
+    /// Optional override: full-mode batch HTTP timeout (seconds). This is
+    /// separate from `relay_request_timeout_secs`, which controls ordinary
+    /// Apps Script HTTP relay calls. Full mode batches can carry many active
+    /// TCP/UDP sessions at once, so slow networks may need `45` or `60`, while
+    /// fail-fast multi-deployment setups may prefer lower values. Clamped to
+    /// `[5, 300]`.
+    #[serde(default)]
+    pub request_timeout_secs: Option<u64>,
+
+    /// Full-mode auto-blacklist tuning. Timeout is a noisy signal on flaky
+    /// networks, so batch timeouts use a strike window before cooling down a
+    /// deployment. Defaults match the upstream v1.9.1 operator guidance:
+    /// 3 strikes / 30s window / 120s cooldown.
+    #[serde(default)]
+    pub auto_blacklist_strikes: Option<u32>,
+    #[serde(default)]
+    pub auto_blacklist_window_secs: Option<u64>,
+    #[serde(default)]
+    pub auto_blacklist_cooldown_secs: Option<u64>,
+
     /// Optional explicit SNI rotation pool for outbound TLS to `google_ip`.
-    /// Empty / missing = auto-expand from `front_domain` (current default of
-    /// {www, mail, drive, docs, calendar}.google.com). Set to an explicit list
-    /// to pick exactly which SNI names get rotated through — useful when one
-    /// of the defaults is locally blocked (e.g. mail.google.com in Iran at
-    /// various times). Can be tested per-name via the UI or `mhrv-f test-sni`.
+    /// Empty / missing = auto-expand from `front_domain` using the built-in
+    /// Google edge candidate pool. Set to an explicit list
+    /// to pick exactly which SNI names get rotated through. Test per-name via
+    /// the UI or `mhrv-f test-sni`.
     #[serde(default)]
     pub sni_hosts: Option<Vec<String>>,
     #[serde(default = "default_fetch_ips_from_api")]
@@ -212,24 +345,22 @@ pub struct Config {
 
     #[serde(default = "default_google_ip_validation")]
     pub google_ip_validation: bool,
-    /// When true, GET requests to `x.com/i/api/graphql/<hash>/<op>?variables=…`
-    /// have their query trimmed to just the `variables=` param before being
-    /// relayed. The `features` / `fieldToggles` params that X ships with
-    /// these requests change frequently and bust the response cache —
-    /// stripping them dramatically improves hit rate on Twitter/X browsing.
+    /// When true, GET requests to `x.com`/`twitter.com`
+    /// `/i/api/graphql/<hash>/<op>?variables=…` have their query trimmed to
+    /// just the `variables=` param before being relayed. The `features` /
+    /// `fieldToggles` params that X ships with these requests change
+    /// frequently and bust the response cache — stripping them dramatically
+    /// improves hit rate on Twitter/X browsing.
     ///
-    /// Credit: idea from seramo_ir, originally adapted to the Python
-    /// MasterHttpRelayVPN by the Persian community
-    /// (https://gist.github.com/seramo/0ae9e5d30ac23a73d5eb3bd2710fcd67).
+    /// Based on the community X GraphQL cache pattern.
     ///
     /// Off by default — some X endpoints may reject calls that omit
     /// features. Turn on and observe.
     #[serde(default)]
     pub normalize_x_graphql: bool,
 
-    /// Route YouTube traffic through the Apps Script relay instead of
-    /// the direct SNI-rewrite tunnel. Ported from upstream Python
-    /// `youtube_via_relay`.
+    /// Route YouTube HTML/API traffic through the Apps Script relay instead
+    /// of the direct SNI-rewrite tunnel.
     ///
     /// Why this exists: when YouTube is SNI-rewritten to `google_ip`
     /// with `SNI=www.google.com`, Google's frontend can enforce
@@ -238,9 +369,12 @@ pub struct Config {
     /// (it hits YouTube from Google's own backend, not via www.google.com
     /// SNI) but introduces the UrlFetchApp User-Agent and quota costs.
     ///
-    /// Trade-off: enabling removes SafeSearch-on-SNI, adds `User-Agent:
-    /// Google-Apps-Script` header and counts YouTube traffic against
-    /// your Apps Script quota. Off by default.
+    /// Trade-off: enabling removes SafeSearch-on-SNI for YouTube page/API
+    /// surfaces, adds `User-Agent: Google-Apps-Script` header, and counts
+    /// those calls against your Apps Script quota. CDN assets such as
+    /// `ytimg.com` stay on SNI-rewrite to avoid wasting quota; `googlevideo.com`
+    /// still uses the normal relay path because it is served by separate Google
+    /// video edges, not the regular GFE `google_ip`. Off by default.
     #[serde(default)]
     pub youtube_via_relay: bool,
 
@@ -248,9 +382,10 @@ pub struct Config {
     /// one of these entries bypasses the Apps Script relay entirely and
     /// is plain-TCP-passthroughed (optionally through `upstream_socks5`).
     ///
-    /// Accepts exact hostnames ("example.com") and leading-dot suffixes
-    /// (".internal.example" matches "a.b.internal.example"). Matches are
-    /// case-insensitive.
+    /// Accepts exact hostnames ("example.com"), leading-dot suffixes
+    /// (".internal.example"), and wildcard suffix aliases
+    /// ("*.internal.example"). Suffix rules also match the bare parent.
+    /// Matches are case-insensitive.
     ///
     /// Dispatched BEFORE SNI-rewrite and Apps Script, so a passthrough
     /// entry wins over the default Google-edge routing. Useful for
@@ -258,6 +393,34 @@ pub struct Config {
     /// (saving Apps Script quota) or for hosts that break under MITM.
     #[serde(default)]
     pub passthrough_hosts: Vec<String>,
+
+    /// Block SOCKS5 UDP datagrams to port 443 before they enter the full
+    /// tunnel. This forces QUIC/HTTP3 clients to fall back to TCP/HTTPS
+    /// without spending Apps Script batches on UDP/443 probes. Off by default
+    /// because some full-mode users intentionally want UDP/443 carried.
+    #[serde(default)]
+    pub block_quic: bool,
+
+    /// Opt-out for the DoH bypass. Default true keeps known browser DoH
+    /// endpoints inside the selected tunnel instead of sending them direct.
+    /// Set false only on networks where direct DoH reliably works and you
+    /// prefer the latency win.
+    #[serde(default = "default_tunnel_doh")]
+    pub tunnel_doh: bool,
+    /// Extra DNS-over-HTTPS hostnames to bypass in addition to the built-in
+    /// list. Entries match exact hosts and dot-anchored subdomains; unlike
+    /// `passthrough_hosts`, a leading dot is optional for suffix matching.
+    #[serde(default)]
+    pub bypass_doh_hosts: Vec<String>,
+
+    /// Optional multi-edge domain-fronting groups. Matched hosts are handled
+    /// by the same local-MITM/SNI-rewrite machinery as the Google edge path,
+    /// but use the group's configured `(ip, sni)` pair.
+    ///
+    /// Empty / missing means feature off. In `full` mode these groups are
+    /// inert because full mode preserves end-to-end TLS through tunnel-node.
+    #[serde(default)]
+    pub fronting_groups: Vec<FrontingGroup>,
 
     /// Per-domain overrides for routing and performance knobs.
     ///
@@ -272,9 +435,13 @@ pub struct Config {
     /// Canonical configuration: Apps Script routing always uses these pools.
     /// The runtime picks between groups for quota resilience.
     ///
-    /// In `google_only` bootstrap mode this may be omitted.
+    /// In `direct` / legacy `google_only` bootstrap mode this may be omitted.
     #[serde(default)]
     pub account_groups: Option<Vec<AccountGroup>>,
+
+    /// Serverless Edge JSON relay settings, used only in `vercel_edge` mode.
+    #[serde(default)]
+    pub vercel: VercelConfig,
 
     /// Optional access token required when binding to LAN (listen_host=0.0.0.0/::).
     /// When set, the HTTP proxy requires `X-MHRV-F-Token: <token>` on plain HTTP
@@ -285,7 +452,7 @@ pub struct Config {
     pub lan_token: Option<String>,
 
     /// Optional allowlist of client IPs/CIDRs allowed to connect when LAN-bound.
-    /// Minimal implementation: exact IP match only (CIDR parsing may be added later).
+    /// Accepts exact IP addresses and CIDR ranges.
     #[serde(default)]
     pub lan_allowlist: Option<Vec<String>>,
 
@@ -348,6 +515,9 @@ fn default_scan_batch_size() -> usize {
 fn default_google_ip_validation() -> bool {
     true
 }
+fn default_tunnel_doh() -> bool {
+    true
+}
 
 fn default_google_ip() -> String {
     "216.239.38.120".into()
@@ -370,8 +540,13 @@ fn default_verify_ssl() -> bool {
 
 impl Config {
     pub fn from_json_str(data: &str) -> Result<Self, ConfigError> {
-        let mut cfg: Config = serde_json::from_str(data)?;
-        cfg.migrate_in_place()?;
+        let value: Value = serde_json::from_str(data)?;
+        Self::from_json_value(value)
+    }
+
+    fn from_json_value(value: Value) -> Result<Self, ConfigError> {
+        let cfg: Config = serde_json::from_value(value)?;
+        cfg.validate_config_version()?;
         cfg.validate()?;
         Ok(cfg)
     }
@@ -379,21 +554,16 @@ impl Config {
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let data = std::fs::read_to_string(path)
             .map_err(|e| ConfigError::Read(path.display().to_string(), e))?;
-        Self::from_json_str(&data)
+        let value: Value = serde_json::from_str(&data)?;
+        Self::from_json_value(value)
     }
 
-    fn migrate_in_place(&mut self) -> Result<(), ConfigError> {
-        // Fail closed on future versions so old binaries don't silently
-        // misinterpret new schema.
+    fn validate_config_version(&self) -> Result<(), ConfigError> {
         if self.config_version > CURRENT_CONFIG_VERSION {
             return Err(ConfigError::Invalid(format!(
                 "config_version {} is newer than this binary supports (max {}). Please update mhrv-f.",
                 self.config_version, CURRENT_CONFIG_VERSION
             )));
-        }
-        // v0/v1 (implicit) -> v1: nothing to rewrite yet; keep hook for future.
-        if self.config_version == 0 {
-            self.config_version = 1;
         }
         Ok(())
     }
@@ -443,15 +613,60 @@ impl Config {
                 ));
             }
         }
+        if mode == Mode::VercelEdge {
+            let base = self.vercel.base_url.trim();
+            if base.is_empty() {
+                return Err(ConfigError::Invalid(
+                    "vercel.base_url is required in vercel_edge mode".into(),
+                ));
+            }
+            let parsed = url::Url::parse(base).map_err(|e| {
+                ConfigError::Invalid(format!("vercel.base_url is not a valid URL: {e}"))
+            })?;
+            if !matches!(parsed.scheme(), "https" | "http") {
+                return Err(ConfigError::Invalid(
+                    "vercel.base_url must start with https:// or http://".into(),
+                ));
+            }
+            if parsed.host_str().unwrap_or("").trim().is_empty() {
+                return Err(ConfigError::Invalid(
+                    "vercel.base_url must include a hostname".into(),
+                ));
+            }
+            let auth = self.vercel.auth_key.trim();
+            if auth.is_empty()
+                || auth.eq_ignore_ascii_case("change-me")
+                || auth.eq_ignore_ascii_case("your_auth_key")
+                || auth.eq_ignore_ascii_case("your-auth-key")
+                || auth.eq_ignore_ascii_case("same_value_as_vercel_auth_key")
+            {
+                return Err(ConfigError::Invalid(
+                    "vercel.auth_key must be set to a non-placeholder AUTH_KEY".into(),
+                ));
+            }
+            if self.vercel.relay_path.trim().is_empty()
+                || !self.vercel.relay_path.trim().starts_with('/')
+            {
+                return Err(ConfigError::Invalid(
+                    "vercel.relay_path must start with '/' (default: /api/api)".into(),
+                ));
+            }
+            if self.vercel.max_body_bytes < 1024 {
+                return Err(ConfigError::Invalid(
+                    "vercel.max_body_bytes must be at least 1024".into(),
+                ));
+            }
+        }
         if self.scan_batch_size == 0 {
             return Err(ConfigError::Invalid(
                 "scan_batch_size must be greater than 0".into(),
             ));
         }
         if self.socks5_port == Some(self.listen_port) {
-            return Err(ConfigError::Invalid(
-                "listen_port and socks5_port must be different".into(),
-            ));
+            return Err(ConfigError::Invalid(format!(
+                "listen_port and socks5_port must differ on the same host (both set to {} on {}). Change one of them in config.json.",
+                self.listen_port, self.listen_host
+            )));
         }
         if let Some(qps) = self.relay_rate_limit_qps {
             if !(qps.is_finite()) || qps <= 0.0 {
@@ -481,16 +696,57 @@ impl Config {
                 }
             }
         }
+        for (i, group) in self.fronting_groups.iter().enumerate() {
+            if group.name.trim().is_empty() {
+                return Err(ConfigError::Invalid(format!(
+                    "fronting_groups[{}]: name is empty",
+                    i
+                )));
+            }
+            if group.ip.trim().is_empty() {
+                return Err(ConfigError::Invalid(format!(
+                    "fronting_groups[{}] ('{}'): ip is empty",
+                    i, group.name
+                )));
+            }
+            if group.sni.trim().is_empty() {
+                return Err(ConfigError::Invalid(format!(
+                    "fronting_groups[{}] ('{}'): sni is empty",
+                    i, group.name
+                )));
+            }
+            if let Err(e) = ServerName::try_from(group.sni.clone()) {
+                return Err(ConfigError::Invalid(format!(
+                    "fronting_groups[{}] ('{}'): invalid sni '{}': {}",
+                    i, group.name, group.sni, e
+                )));
+            }
+            if group.domains.is_empty() {
+                return Err(ConfigError::Invalid(format!(
+                    "fronting_groups[{}] ('{}'): domains list is empty",
+                    i, group.name
+                )));
+            }
+            for domain in &group.domains {
+                if domain.trim().is_empty() {
+                    return Err(ConfigError::Invalid(format!(
+                        "fronting_groups[{}] ('{}'): empty domain entry",
+                        i, group.name
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 
     pub fn mode_kind(&self) -> Result<Mode, ConfigError> {
         match self.mode.as_str() {
             "apps_script" => Ok(Mode::AppsScript),
-            "google_only" => Ok(Mode::GoogleOnly),
+            "vercel_edge" => Ok(Mode::VercelEdge),
+            "direct" | "google_only" => Ok(Mode::Direct),
             "full" => Ok(Mode::Full),
             other => Err(ConfigError::Invalid(format!(
-                "unknown mode '{}' (expected 'apps_script', 'google_only', or 'full')",
+                "unknown mode '{}' (expected 'apps_script', 'vercel_edge', 'direct', or 'full')",
                 other
             ))),
         }
@@ -562,6 +818,23 @@ impl Config {
                 }
             }
         }
+        if matches!(self.mode_kind(), Ok(Mode::VercelEdge)) {
+            if self.vercel.auth_key.trim().len() < 12 {
+                out.push("vercel.auth_key looks short. Use a long random secret and set the same value as AUTH_KEY in the serverless relay.".into());
+            }
+            if !self.vercel.verify_tls {
+                out.push("vercel.verify_tls=false disables TLS certificate verification for the serverless relay. Keep it true unless you are testing a local endpoint.".into());
+            }
+            if self.vercel.base_url.trim().starts_with("http://") {
+                out.push(
+                    "vercel.base_url uses plain HTTP. Use https:// for real serverless deployments."
+                        .into(),
+                );
+            }
+            if self.vercel.enable_batching {
+                out.push("vercel.enable_batching is experimental; if your deployed relay is old or protected by platform auth, the client will fall back to single JSON fetches.".into());
+            }
+        }
 
         out
     }
@@ -621,6 +894,26 @@ impl Config {
             RuntimeProfile::MaxSpeed => 30,
         }
     }
+
+    pub fn effective_batch_request_timeout_secs(&self) -> u64 {
+        self.request_timeout_secs.unwrap_or(30).clamp(5, 300)
+    }
+
+    pub fn effective_auto_blacklist_strikes(&self) -> u32 {
+        self.auto_blacklist_strikes.unwrap_or(3).clamp(1, 100)
+    }
+
+    pub fn effective_auto_blacklist_window_secs(&self) -> u64 {
+        self.auto_blacklist_window_secs
+            .unwrap_or(30)
+            .clamp(1, 86_400)
+    }
+
+    pub fn effective_auto_blacklist_cooldown_secs(&self) -> u64 {
+        self.auto_blacklist_cooldown_secs
+            .unwrap_or(120)
+            .clamp(1, 86_400)
+    }
 }
 
 #[cfg(test)]
@@ -642,7 +935,7 @@ mod tests {
             "mode": "apps_script",
             "account_groups": [{
                 "label": "primary",
-                "auth_key": "supersecretkey-123456",
+                "auth_key": "test-auth-key-please-change-32chars",
                 "script_ids": ["A", "B", "C"],
                 "weight": 1,
                 "enabled": true
@@ -650,6 +943,17 @@ mod tests {
         }"#;
         let cfg: Config = serde_json::from_str(s).unwrap();
         cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn normalizes_script_ids_from_urls_and_deduplicates() {
+        let ids = ScriptId::Many(vec![
+            " https://script.google.com/macros/s/AKfyc_URL_1/exec ".into(),
+            "AKfyc_URL_1".into(),
+            "https://script.google.com/macros/s/AKfyc_URL_2/dev?foo=bar".into(),
+        ])
+        .into_vec();
+        assert_eq!(ids, vec!["AKfyc_URL_1", "AKfyc_URL_2"]);
     }
 
     #[test]
@@ -666,15 +970,27 @@ mod tests {
     }
 
     #[test]
-    fn parses_google_only_without_script_id() {
-        // Bootstrap mode: no relay config needed.
+    fn parses_direct_without_script_id() {
+        // Direct mode: no relay config needed.
+        let s = r#"{
+            "mode": "direct"
+        }"#;
+        let cfg: Config = serde_json::from_str(s).unwrap();
+        cfg.validate()
+            .expect("direct must validate without account_groups");
+        assert_eq!(cfg.mode_kind().unwrap(), Mode::Direct);
+    }
+
+    #[test]
+    fn google_only_alias_parses_as_direct() {
+        // Compatibility alias: old configs keep loading.
         let s = r#"{
             "mode": "google_only"
         }"#;
         let cfg: Config = serde_json::from_str(s).unwrap();
         cfg.validate()
-            .expect("google_only must validate without account_groups");
-        assert_eq!(cfg.mode_kind().unwrap(), Mode::GoogleOnly);
+            .expect("google_only alias must validate without account_groups");
+        assert_eq!(cfg.mode_kind().unwrap(), Mode::Direct);
     }
 
     #[test]
@@ -682,13 +998,64 @@ mod tests {
         let s = r#"{
             "mode": "full",
             "account_groups": [{
-                "auth_key": "supersecretkey-123456",
+                "auth_key": "test-auth-key-please-change-32chars",
                 "script_ids": "ABCDEF"
             }]
         }"#;
         let cfg: Config = serde_json::from_str(s).unwrap();
         cfg.validate().unwrap();
         assert_eq!(cfg.mode_kind().unwrap(), Mode::Full);
+    }
+
+    #[test]
+    fn parses_vercel_edge_mode() {
+        let s = r#"{
+            "mode": "vercel_edge",
+            "vercel": {
+                "base_url": "https://example.vercel.app",
+                "relay_path": "/api/api",
+                "auth_key": "test-auth-key-please-change-32chars"
+            }
+        }"#;
+        let cfg = Config::from_json_str(s).unwrap();
+        assert_eq!(cfg.mode_kind().unwrap(), Mode::VercelEdge);
+        assert_eq!(cfg.vercel.relay_path, "/api/api");
+        assert!(cfg.vercel.verify_tls);
+    }
+
+    #[test]
+    fn fronting_groups_parse_and_validate() {
+        let s = r#"{
+            "mode": "direct",
+            "fronting_groups": [
+                {
+                    "name": "vercel",
+                    "ip": "76.76.21.21",
+                    "sni": "react.dev",
+                    "domains": ["vercel.com", "nextjs.org"]
+                }
+            ]
+        }"#;
+        let cfg: Config = serde_json::from_str(s).unwrap();
+        cfg.validate().unwrap();
+        assert_eq!(cfg.fronting_groups.len(), 1);
+        assert_eq!(cfg.fronting_groups[0].name, "vercel");
+    }
+
+    #[test]
+    fn fronting_group_rejects_invalid_sni_at_validate() {
+        let s = r#"{
+            "mode": "direct",
+            "fronting_groups": [{
+                "name": "bad",
+                "ip": "1.2.3.4",
+                "sni": "not a valid hostname",
+                "domains": ["x.com"]
+            }]
+        }"#;
+        let cfg: Config = serde_json::from_str(s).unwrap();
+        let err = cfg.validate().expect_err("invalid sni must fail validate");
+        assert!(format!("{}", err).contains("invalid sni"));
     }
 
     #[test]
@@ -705,7 +1072,7 @@ mod tests {
         let s = r#"{
             "mode": "hybrid",
             "account_groups": [{
-                "auth_key": "supersecretkey-123456",
+                "auth_key": "test-auth-key-please-change-32chars",
                 "script_ids": "X"
             }]
         }"#;
@@ -718,7 +1085,7 @@ mod tests {
         let s = r#"{
             "mode": "apps_script",
             "account_groups": [{
-                "auth_key": "supersecretkey-123456",
+                "auth_key": "test-auth-key-please-change-32chars",
                 "script_ids": "X"
             }],
             "scan_batch_size": 0
@@ -732,7 +1099,7 @@ mod tests {
         let s = r#"{
             "mode": "apps_script",
             "account_groups": [{
-                "auth_key": "supersecretkey-123456",
+                "auth_key": "test-auth-key-please-change-32chars",
                 "script_ids": "X"
             }],
             "listen_port": 8085,
@@ -740,6 +1107,32 @@ mod tests {
         }"#;
         let cfg: Config = serde_json::from_str(s).unwrap();
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn missing_or_null_socks5_port_disables_socks5() {
+        let base = r#"{
+            "mode": "apps_script",
+            "account_groups": [{
+                "auth_key": "test-auth-key-please-change-32chars",
+                "script_ids": "X"
+            }],
+            "listen_port": 9090
+        }"#;
+        let cfg = Config::from_json_str(base).unwrap();
+        assert_eq!(cfg.socks5_port, None);
+
+        let disabled = r#"{
+            "mode": "apps_script",
+            "account_groups": [{
+                "auth_key": "test-auth-key-please-change-32chars",
+                "script_ids": "X"
+            }],
+            "listen_port": 9090,
+            "socks5_port": null
+        }"#;
+        let cfg = Config::from_json_str(disabled).unwrap();
+        assert_eq!(cfg.socks5_port, None);
     }
 }
 
@@ -770,11 +1163,24 @@ mod rt_tests {
   "verify_ssl": true,
   "upstream_socks5": "127.0.0.1:50529",
   "parallel_relay": 2,
+  "range_parallelism": 12,
+  "range_chunk_bytes": 262144,
+  "relay_request_timeout_secs": 25,
+  "request_timeout_secs": 45,
+  "auto_blacklist_strikes": 5,
+  "auto_blacklist_window_secs": 60,
+  "auto_blacklist_cooldown_secs": 30,
   "sni_hosts": ["www.google.com", "drive.google.com"],
   "fetch_ips_from_api": true,
   "max_ips_to_scan": 50,
   "scan_batch_size": 100,
-  "google_ip_validation": true
+  "google_ip_validation": true,
+  "outage_reset_enabled": true,
+  "outage_reset_failure_threshold": 4,
+  "outage_reset_window_ms": 6000,
+  "outage_reset_cooldown_ms": 20000,
+  "relay_rate_limit_qps": 2.5,
+  "relay_rate_limit_burst": 5
 }"#;
         let tmp = std::env::temp_dir().join("mhrv-rt-test.json");
         std::fs::write(&tmp, json).unwrap();
@@ -788,6 +1194,14 @@ mod rt_tests {
             &vec!["www.google.com".to_string(), "drive.google.com".to_string()]
         );
         assert!(cfg.fetch_ips_from_api);
+        assert_eq!(cfg.range_parallelism, Some(12));
+        assert_eq!(cfg.relay_request_timeout_secs, Some(25));
+        assert_eq!(cfg.request_timeout_secs, Some(45));
+        assert_eq!(cfg.auto_blacklist_strikes, Some(5));
+        assert_eq!(cfg.auto_blacklist_window_secs, Some(60));
+        assert_eq!(cfg.auto_blacklist_cooldown_secs, Some(30));
+        assert_eq!(cfg.outage_reset_failure_threshold, Some(4));
+        assert_eq!(cfg.relay_rate_limit_qps, Some(2.5));
         let _ = std::fs::remove_file(&tmp);
     }
 
@@ -800,7 +1214,7 @@ mod rt_tests {
   "google_ip": "216.239.38.120",
   "front_domain": "www.google.com",
   "account_groups": [{
-    "auth_key": "secretkey123-secretkey123",
+    "auth_key": "test-auth-key-please-change-32chars",
     "script_ids": "A"
   }],
   "listen_host": "127.0.0.1",

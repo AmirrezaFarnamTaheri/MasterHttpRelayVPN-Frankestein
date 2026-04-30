@@ -9,6 +9,115 @@ permissions:
   contents: read
 
 jobs:
+  repo-sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: JavaScript relay tools syntax
+        run: |
+          set -euo pipefail
+          find tools -type f -name '*.js' -print0 | xargs -0 -r -n1 node --check
+
+      - name: Apps Script syntax
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          while IFS= read -r -d '' file; do
+            out="$tmp/$(basename "$file").js"
+            cp "$file" "$out"
+            node --check "$out"
+          done < <(find assets/apps_script -type f -name '*.gs' -print0)
+
+      - name: Apps Script helper tests
+        run: |
+          set -euo pipefail
+          node assets/apps_script/tests/edge_dns_test.js
+
+      - name: JSON, XML, Android strings, and stale-source scan
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import pathlib
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = pathlib.Path(".")
+          skip_parts = {".git", "target", "dist", "build", ".gradle"}
+          allowed = set()
+          errors = []
+
+          def keep(path: pathlib.Path) -> bool:
+              return not any(part in skip_parts for part in path.parts)
+
+          for path in root.rglob("*.json"):
+              if keep(path):
+                  try:
+                      json.loads(path.read_text(encoding="utf-8-sig"))
+                  except Exception as exc:
+                      errors.append(f"JSON parse failed: {path}: {exc}")
+
+          for path in root.rglob("*.xml"):
+              if keep(path):
+                  try:
+                      ET.parse(path)
+                  except Exception as exc:
+                      errors.append(f"XML parse failed: {path}: {exc}")
+
+          strings_path = pathlib.Path("android/app/src/main/res/values/strings.xml")
+          if strings_path.exists():
+              tree = ET.parse(strings_path)
+              names = {node.attrib["name"] for node in tree.findall(".//string") if "name" in node.attrib}
+              refs = set()
+              for kt in pathlib.Path("android/app/src/main/java").rglob("*.kt"):
+                  refs.update(re.findall(r"R\.string\.([A-Za-z0-9_]+)", kt.read_text(encoding="utf-8")))
+              missing = sorted(refs - names)
+              if missing:
+                  errors.append("Missing Android strings: " + ", ".join(missing))
+
+          # Encoded so stale raw investigation/forum labels do not live in the
+          # repository while CI still blocks them from docs, code, and tools.
+          stale_patterns = [
+              "SW52ZXN0aWdhdGUgdG8gUG9ydA==",
+              "R29vc2VSZWxheVZQTi1tYWlu",
+              "Q29tbWl0cyB0byAxODMgVXBzdHJlYW0=",
+              "VXBzdHJlYW0gMTg1IGNvbW1pdHM=",
+              "Y29tbWl0IGFuZCBmb3J1bQ==",
+              "Zm9ydW0gZXhwb3J0",
+              "QHhzZmlsdGVycm5ldA==",
+              "QFRoZVZQTk1ldGhvZA==",
+              "QEFyY2hpdmVUZWxs",
+              "QHBpbmdwbGFzX2NoYW5uZWw=",
+          ]
+          stale_patterns = [
+              base64.b64decode(pattern).decode("utf-8")
+              for pattern in stale_patterns
+          ]
+          for path in root.rglob("*"):
+              if not path.is_file() or not keep(path):
+                  continue
+              if str(path).replace("\\", "/") in allowed:
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8", errors="ignore")
+              except Exception:
+                  continue
+              for pattern in stale_patterns:
+                  if pattern in text:
+                      errors.append(f"Stale investigation/forum marker in {path}: {pattern}")
+
+          if errors:
+              print("\n".join(errors), file=sys.stderr)
+              sys.exit(1)
+          PY
+
   rust:
     runs-on: ubuntu-latest
     steps:

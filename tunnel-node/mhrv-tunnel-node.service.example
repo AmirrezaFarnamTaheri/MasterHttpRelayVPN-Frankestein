@@ -1,0 +1,22 @@
+[Unit]
+Description=mhrv-f tunnel-node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/mhrv-f/tunnel-node
+Environment=TUNNEL_AUTH_KEY=replace-with-the-same-secret-as-CodeFull-gs
+Environment=PORT=8080
+ExecStart=/opt/mhrv-f/tunnel-node/tunnel-node
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

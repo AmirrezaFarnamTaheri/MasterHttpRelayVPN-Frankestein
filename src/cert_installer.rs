@@ -1,7 +1,7 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::mitm::CERT_NAME;
+use crate::mitm::{CA_DIR, CERT_NAME};
 
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
@@ -11,6 +11,121 @@ pub enum InstallError {
     Failed,
     #[error("unsupported platform: {0}")]
     Unsupported(String),
+    #[error("io {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("CA still trusted after removal; re-run with admin/sudo")]
+    RemovalIncomplete,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum RemovalOutcome {
+    Clean,
+    NssIncomplete(NssReport),
+}
+
+impl RemovalOutcome {
+    pub fn summary(&self) -> String {
+        match self {
+            RemovalOutcome::Clean => "CA removed.".to_string(),
+            RemovalOutcome::NssIncomplete(r) if r.tool_missing_with_stores_present => {
+                "OS CA removed. NSS cleanup skipped; NSS certutil not found.".to_string()
+            }
+            RemovalOutcome::NssIncomplete(r) => format!(
+                "OS CA removed. NSS cleanup partial: {}/{} browser stores updated.",
+                r.ok, r.tried
+            ),
+        }
+    }
+}
+
+pub fn reconcile_sudo_environment() {
+    #[cfg(unix)]
+    unix::reconcile_sudo_home();
+}
+
+#[cfg(unix)]
+mod unix {
+    use super::{should_reconcile_for, sudo_parse_passwd_home};
+    use std::path::Path;
+    use std::process::Command;
+
+    pub(super) fn reconcile_sudo_home() {
+        let euid = unsafe { libc::geteuid() };
+        let sudo_user_raw = std::env::var("SUDO_USER").ok();
+        let Some(sudo_user) = should_reconcile_for(euid, sudo_user_raw.as_deref()) else {
+            return;
+        };
+        let sudo_user = sudo_user.to_string();
+        match resolve_home(&sudo_user) {
+            Some(home) => {
+                tracing::info!(
+                    "Detected sudo invocation (SUDO_USER={}): re-rooting HOME to {} so user-scoped cert paths target the real user.",
+                    sudo_user,
+                    home
+                );
+                std::env::set_var("HOME", home);
+            }
+            None => {
+                tracing::warn!(
+                    "Running under sudo (SUDO_USER={}), but could not resolve the user's home dir. Cert paths will operate on root's HOME.",
+                    sudo_user
+                );
+            }
+        }
+    }
+
+    fn resolve_home(sudo_user: &str) -> Option<String> {
+        if let Ok(h) = std::env::var("SUDO_HOME") {
+            if !h.is_empty() {
+                return Some(h);
+            }
+        }
+        if let Ok(out) = Command::new("getent").args(["passwd", sudo_user]).output() {
+            if out.status.success() {
+                let line = String::from_utf8_lossy(&out.stdout);
+                if let Some(h) = sudo_parse_passwd_home(&line) {
+                    return Some(h);
+                }
+            }
+        }
+        for root in ["/Users", "/home"] {
+            let candidate = format!("{}/{}", root, sudo_user);
+            if Path::new(&candidate).exists() {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+}
+
+#[cfg_attr(not(unix), allow(dead_code))]
+fn should_reconcile_for(euid: u32, sudo_user: Option<&str>) -> Option<&str> {
+    if euid != 0 {
+        return None;
+    }
+    let user = sudo_user?;
+    if user.is_empty() || user == "root" {
+        return None;
+    }
+    Some(user)
+}
+
+#[cfg_attr(not(unix), allow(dead_code))]
+fn sudo_parse_passwd_home(content: &str) -> Option<String> {
+    let line = content.lines().next()?;
+    let fields: Vec<&str> = line.split(':').collect();
+    if fields.len() < 7 {
+        return None;
+    }
+    let home = fields[5].trim();
+    if home.is_empty() {
+        return None;
+    }
+    Some(home.to_string())
 }
 
 /// Install the CA certificate at `path` into the system trust store.
@@ -53,10 +168,62 @@ pub fn is_ca_trusted(path: &Path) -> bool {
         return false;
     }
     match std::env::consts::OS {
+        "windows" => is_trusted_windows(path),
+        _ => is_ca_trusted_by_name(),
+    }
+}
+
+pub fn is_ca_trusted_by_name() -> bool {
+    match std::env::consts::OS {
         "macos" => is_trusted_macos(),
         "linux" => is_trusted_linux(),
-        "windows" => is_trusted_windows(),
+        "windows" => is_trusted_windows_by_name(),
         _ => false,
+    }
+}
+
+/// Remove the generated CA from OS/browser trust stores and delete the local
+/// `ca/` directory only after OS trust no longer appears active.
+pub fn remove_ca(base_dir: &Path) -> Result<RemovalOutcome, InstallError> {
+    let os = std::env::consts::OS;
+    tracing::info!("Removing CA certificate on {}...", os);
+
+    let platform_ok = match os {
+        "macos" => {
+            remove_macos();
+            true
+        }
+        "linux" => remove_linux(),
+        "windows" => {
+            remove_windows();
+            true
+        }
+        other => return Err(InstallError::Unsupported(other.to_string())),
+    };
+
+    if !platform_ok || is_ca_trusted_by_name() {
+        tracing::error!(
+            "MITM CA is still trusted after OS removal attempt (platform_ok={}); refusing to touch browser state or delete on-disk files.",
+            platform_ok
+        );
+        return Err(InstallError::RemovalIncomplete);
+    }
+
+    let nss = remove_nss_stores();
+
+    let ca_dir = base_dir.join(CA_DIR);
+    if ca_dir.exists() {
+        std::fs::remove_dir_all(&ca_dir).map_err(|e| InstallError::Io {
+            path: ca_dir.clone(),
+            source: e,
+        })?;
+        tracing::info!("Deleted local CA directory: {}", ca_dir.display());
+    }
+
+    if nss.is_clean() {
+        Ok(RemovalOutcome::Clean)
+    } else {
+        Ok(RemovalOutcome::NssIncomplete(nss))
     }
 }
 
@@ -122,6 +289,34 @@ fn is_trusted_macos() -> bool {
     match out {
         Ok(o) => !o.stdout.is_empty() && o.status.success(),
         Err(_) => false,
+    }
+}
+
+fn remove_macos() -> bool {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let login_kc_db = format!("{}/Library/Keychains/login.keychain-db", home);
+    let login_kc = format!("{}/Library/Keychains/login.keychain", home);
+    let login_keychain = if Path::new(&login_kc_db).exists() {
+        login_kc_db
+    } else {
+        login_kc
+    };
+    for args in [
+        vec!["delete-certificate", "-c", CERT_NAME, &login_keychain],
+        vec![
+            "delete-certificate",
+            "-c",
+            CERT_NAME,
+            "/Library/Keychains/System.keychain",
+        ],
+    ] {
+        let _ = Command::new("security").args(&args).status();
+    }
+    if is_trusted_macos() {
+        tracing::warn!("macOS CA removal did not fully clear trust; admin access may be required");
+        false
+    } else {
+        true
     }
 }
 
@@ -309,38 +504,119 @@ fn is_trusted_linux() -> bool {
     false
 }
 
+fn remove_linux() -> bool {
+    let safe_name = CERT_NAME.replace(' ', "_");
+    let candidates = [
+        format!("/usr/local/share/ca-certificates/{}.crt", safe_name),
+        format!("/usr/local/share/ca-certificates/{}.crt", CERT_NAME),
+        format!("/etc/pki/ca-trust/source/anchors/{}.crt", safe_name),
+        format!("/etc/pki/ca-trust/source/anchors/{}.crt", CERT_NAME),
+        format!(
+            "/etc/ca-certificates/trust-source/anchors/{}.crt",
+            safe_name
+        ),
+        format!(
+            "/etc/ca-certificates/trust-source/anchors/{}.crt",
+            CERT_NAME
+        ),
+    ];
+    let mut removed = false;
+    for path in candidates {
+        let p = Path::new(&path);
+        if p.exists() {
+            match std::fs::remove_file(p) {
+                Ok(()) => removed = true,
+                Err(e) => tracing::warn!("could not remove CA anchor {}: {}", p.display(), e),
+            }
+        }
+    }
+    for cmd in [
+        &["update-ca-certificates"][..],
+        &["update-ca-trust", "extract"][..],
+        &["trust", "extract-compat"][..],
+    ] {
+        let _ = run_cmd(cmd);
+    }
+    removed || !is_trusted_linux()
+}
+
 // ---------- Windows ----------
 
-/// Check whether our CA is present in the Windows Trusted Root store.
-/// Looks in both the user store (no admin required to install) and the
-/// machine store. Returns true if `certutil -store` finds this app's CA
-/// (display name from `mitm::CERT_NAME`).
-/// finds a match. Previously this could return
-/// false on Windows, so the Check-CA button was misleading users into
-/// reinstalling a cert that was already trusted.
-fn is_trusted_windows() -> bool {
-    // `certutil -user -store Root <name>` prints the matching cert entries
-    // on success (stdout), and exits with a non-zero code plus a "Not
-    // found" message if nothing matches. We also check stdout for the
-    // cert name because certutil in some locales returns 0 even on no-
-    // match, just with empty output.
-    for args in [
-        vec!["-user", "-store", "Root", CERT_NAME],
-        vec!["-store", "Root", CERT_NAME],
-    ] {
+/// Check whether our exact CA is present in the Windows Trusted Root store.
+///
+/// This compares SHA-1 thumbprints instead of subject names. Subject/name
+/// matching can false-positive if an old or unrelated CA shares `CERT_NAME`.
+fn is_trusted_windows(path: &Path) -> bool {
+    let Some(want) = windows_cert_thumbprint(path) else {
+        tracing::debug!(
+            "Windows CA trust check: could not compute thumbprint for {}",
+            path.display()
+        );
+        return false;
+    };
+
+    for args in [vec!["-user", "-store", "Root"], vec!["-store", "Root"]] {
         let out = Command::new("certutil").args(&args).output();
         if let Ok(o) = out {
             let stdout = String::from_utf8_lossy(&o.stdout);
-            if o.status.success()
-                && stdout
-                    .to_ascii_lowercase()
-                    .contains(&CERT_NAME.to_ascii_lowercase())
-            {
+            if o.status.success() && normalized_hex_contains(&stdout, &want) {
                 return true;
             }
         }
     }
     false
+}
+
+fn is_trusted_windows_by_name() -> bool {
+    windows_store_has(true) || windows_store_has(false)
+}
+
+fn windows_store_has(user: bool) -> bool {
+    let mut args: Vec<&str> = Vec::new();
+    if user {
+        args.push("-user");
+    }
+    args.extend(["-store", "Root", CERT_NAME]);
+    let out = Command::new("certutil").args(&args).output();
+    match out {
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            o.status.success()
+                && stdout
+                    .to_ascii_lowercase()
+                    .contains(&CERT_NAME.to_ascii_lowercase())
+        }
+        Err(_) => false,
+    }
+}
+
+fn windows_cert_thumbprint(path: &Path) -> Option<String> {
+    let out = Command::new("certutil")
+        .args(["-hashfile", path.to_string_lossy().as_ref(), "SHA1"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        let compact: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+        if compact.len() >= 40 && compact.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(compact[..40].to_ascii_lowercase());
+        }
+    }
+    None
+}
+
+fn normalized_hex_contains(haystack: &str, needle_hex: &str) -> bool {
+    only_hex(haystack).contains(&needle_hex.to_ascii_lowercase())
+}
+
+fn only_hex(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
 }
 
 fn install_windows(cert_path: &str) -> bool {
@@ -366,6 +642,40 @@ fn install_windows(cert_path: &str) -> bool {
     }
     tracing::error!("Windows install failed — run as administrator or install manually.");
     false
+}
+
+fn remove_windows() {
+    let mut any = false;
+
+    if windows_store_has(true) {
+        let res = Command::new("certutil")
+            .args(["-delstore", "-user", "Root", CERT_NAME])
+            .status();
+        if matches!(res, Ok(s) if s.success()) {
+            tracing::info!("Removed CA from Windows user Trusted Root store.");
+            any = true;
+        } else {
+            tracing::warn!("failed to remove CA from Windows user Trusted Root store");
+        }
+    }
+
+    if windows_store_has(false) {
+        let res = Command::new("certutil")
+            .args(["-delstore", "Root", CERT_NAME])
+            .status();
+        if matches!(res, Ok(s) if s.success()) {
+            tracing::info!("Removed CA from Windows machine Trusted Root store.");
+            any = true;
+        } else {
+            tracing::warn!(
+                "failed to remove CA from Windows machine Trusted Root store (run as administrator to complete)"
+            );
+        }
+    }
+
+    if !any {
+        tracing::info!("No MITM CA found in Windows Trusted Root stores.");
+    }
 }
 
 // ---------- NSS (Firefox + Chrome/Chromium on Linux) ----------
@@ -457,40 +767,30 @@ fn install_nss_stores(cert_path: &str) {
 /// Existing user.js entries for other prefs are preserved by appending
 /// rather than truncating. Idempotent.
 fn enable_firefox_enterprise_roots() {
-    const PREF: &str = r#"user_pref("security.enterprise_roots.enabled", true);"#;
     let mut touched = 0;
     for profile in firefox_profile_dirs() {
         let user_js = profile.join("user.js");
         let existing = std::fs::read_to_string(&user_js).unwrap_or_default();
-        if existing.contains("security.enterprise_roots.enabled") {
-            // Already set by us or the user. Replace-or-keep: if they set it
-            // to false we leave their choice alone. If it's already our line
-            // verbatim, nothing to do.
-            if existing.contains(PREF) {
-                continue;
+        match add_enterprise_roots_block(&existing) {
+            EnterpriseRootsEdit::AddedBlock(new) => {
+                if let Err(e) = std::fs::write(&user_js, new) {
+                    tracing::debug!(
+                        "firefox profile {}: user.js write failed: {}",
+                        profile.display(),
+                        e
+                    );
+                    continue;
+                }
+                touched += 1;
             }
-            // Different value present — don't overwrite.
-            tracing::debug!(
-                "firefox profile {} already has a different enterprise_roots pref; leaving alone",
-                profile.display()
-            );
-            continue;
+            EnterpriseRootsEdit::AlreadyOurs => {}
+            EnterpriseRootsEdit::UserOwned => {
+                tracing::debug!(
+                    "firefox profile {} already has a user-owned enterprise_roots pref; leaving alone",
+                    profile.display()
+                );
+            }
         }
-        let mut out = existing;
-        if !out.is_empty() && !out.ends_with('\n') {
-            out.push('\n');
-        }
-        out.push_str(PREF);
-        out.push('\n');
-        if let Err(e) = std::fs::write(&user_js, out) {
-            tracing::debug!(
-                "firefox profile {}: user.js write failed: {}",
-                profile.display(),
-                e
-            );
-            continue;
-        }
-        touched += 1;
     }
     if touched > 0 {
         tracing::info!(
@@ -500,16 +800,88 @@ fn enable_firefox_enterprise_roots() {
     }
 }
 
+const FX_MARKER: &str = "// mhrv-f: auto-added, safe to strip with --remove-cert";
+const FX_PREF: &str = r#"user_pref("security.enterprise_roots.enabled", true);"#;
+
+#[derive(Debug, PartialEq, Eq)]
+enum EnterpriseRootsEdit {
+    AddedBlock(String),
+    AlreadyOurs,
+    UserOwned,
+}
+
+fn add_enterprise_roots_block(existing: &str) -> EnterpriseRootsEdit {
+    if contains_our_block(existing) {
+        return EnterpriseRootsEdit::AlreadyOurs;
+    }
+    if existing.contains("security.enterprise_roots.enabled") {
+        return EnterpriseRootsEdit::UserOwned;
+    }
+    let mut out = existing.to_string();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(FX_MARKER);
+    out.push('\n');
+    out.push_str(FX_PREF);
+    out.push('\n');
+    EnterpriseRootsEdit::AddedBlock(out)
+}
+
+fn strip_enterprise_roots_block(existing: &str) -> Option<String> {
+    if !contains_our_block(existing) {
+        return None;
+    }
+    let lines: Vec<&str> = existing.lines().collect();
+    let mut out: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let is_marker = lines[i].trim() == FX_MARKER;
+        let next_is_our_pref = lines.get(i + 1).is_some_and(|l| l.trim() == FX_PREF);
+        if is_marker && next_is_our_pref {
+            i += 2;
+            continue;
+        }
+        out.push(lines[i]);
+        i += 1;
+    }
+    let mut joined = out.join("\n");
+    if existing.ends_with('\n') && !joined.is_empty() {
+        joined.push('\n');
+    }
+    Some(joined)
+}
+
+fn contains_our_block(existing: &str) -> bool {
+    let mut prev: Option<&str> = None;
+    for line in existing.lines() {
+        if prev.map(str::trim) == Some(FX_MARKER) && line.trim() == FX_PREF {
+            return true;
+        }
+        prev = Some(line);
+    }
+    false
+}
+
+fn has_bare_enterprise_roots(existing: &str) -> bool {
+    if contains_our_block(existing) {
+        return false;
+    }
+    existing.lines().any(|l| l.trim() == FX_PREF)
+}
+
 fn has_nss_certutil() -> bool {
     Command::new("certutil")
         .arg("--help")
         .output()
         .ok()
         .map(|o| {
-            // macOS has a different certutil built-in that doesn't support -d.
-            // NSS-specific help output mentions the -d / -n flags.
-            String::from_utf8_lossy(&o.stderr).contains("-d")
-                || String::from_utf8_lossy(&o.stdout).contains("-d")
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stderr),
+                String::from_utf8_lossy(&o.stdout)
+            );
+            combined.to_ascii_lowercase().contains("nickname")
         })
         .unwrap_or(false)
 }
@@ -535,8 +907,13 @@ fn install_nss_in_dir(dir_arg: &str, cert_path: &str) -> bool {
         .output();
     match res {
         Ok(o) if o.status.success() => {
-            tracing::debug!("NSS install ok: {}", dir_arg);
-            true
+            if nss_cert_present(dir_arg) {
+                tracing::debug!("NSS install verified: {}", dir_arg);
+                true
+            } else {
+                tracing::debug!("NSS install completed but verification failed: {}", dir_arg);
+                false
+            }
         }
         Ok(o) => {
             tracing::debug!(
@@ -548,6 +925,140 @@ fn install_nss_in_dir(dir_arg: &str, cert_path: &str) -> bool {
         }
         Err(e) => {
             tracing::debug!("NSS certutil exec failed for {}: {}", dir_arg, e);
+            false
+        }
+    }
+}
+
+fn nss_cert_present(dir_arg: &str) -> bool {
+    Command::new("certutil")
+        .args(["-L", "-n", CERT_NAME, "-d", dir_arg])
+        .output()
+        .ok()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NssReport {
+    pub tried: usize,
+    pub ok: usize,
+    pub tool_missing_with_stores_present: bool,
+}
+
+impl NssReport {
+    pub fn is_clean(&self) -> bool {
+        !self.tool_missing_with_stores_present && self.tried == self.ok
+    }
+}
+
+fn remove_nss_stores() -> NssReport {
+    disable_firefox_enterprise_roots();
+
+    if !has_nss_certutil() {
+        let profiles = firefox_profile_dirs();
+        let chrome_present: bool;
+        #[cfg(target_os = "linux")]
+        {
+            chrome_present = chrome_nssdb_path()
+                .map(|p| p.join("cert9.db").exists() || p.join("cert8.db").exists())
+                .unwrap_or(false);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            chrome_present = false;
+        }
+        let stores_present = !profiles.is_empty() || chrome_present;
+        if stores_present {
+            tracing::warn!(
+                "NSS certutil not found; cannot automatically remove '{}' from Firefox/Chrome NSS stores.",
+                CERT_NAME
+            );
+        }
+        return NssReport {
+            tried: 0,
+            ok: 0,
+            tool_missing_with_stores_present: stores_present,
+        };
+    }
+    let mut report = NssReport::default();
+    for p in firefox_profile_dirs() {
+        report.tried += 1;
+        let prefix = if p.join("cert9.db").exists() {
+            "sql:"
+        } else if p.join("cert8.db").exists() {
+            ""
+        } else {
+            continue;
+        };
+        let dir_arg = format!("{}{}", prefix, p.display());
+        if remove_nss_in_dir(&dir_arg) {
+            report.ok += 1;
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(nssdb) = chrome_nssdb_path() {
+            if nssdb.join("cert9.db").exists() || nssdb.join("cert8.db").exists() {
+                report.tried += 1;
+                let dir_arg = format!("sql:{}", nssdb.display());
+                if remove_nss_in_dir(&dir_arg) {
+                    report.ok += 1;
+                }
+            }
+        }
+    }
+    if report.tried > 0 && report.ok != report.tried {
+        tracing::warn!(
+            "NSS cleanup partial: {}/{} stores updated. Close Firefox/Chrome and rerun --remove-cert if needed.",
+            report.ok,
+            report.tried
+        );
+    }
+    report
+}
+
+fn disable_firefox_enterprise_roots() {
+    for profile in firefox_profile_dirs() {
+        let user_js = profile.join("user.js");
+        let Ok(existing) = std::fs::read_to_string(&user_js) else {
+            continue;
+        };
+        if let Some(new) = strip_enterprise_roots_block(&existing) {
+            let _ = std::fs::write(&user_js, new);
+            continue;
+        }
+        if has_bare_enterprise_roots(&existing) {
+            tracing::info!(
+                "Firefox profile {}: security.enterprise_roots.enabled is present without our marker; leaving it in place",
+                profile.display()
+            );
+        }
+    }
+}
+
+fn remove_nss_in_dir(dir_arg: &str) -> bool {
+    match Command::new("certutil")
+        .args(["-D", "-n", CERT_NAME, "-d", dir_arg])
+        .output()
+    {
+        Ok(o) if o.status.success() => {
+            tracing::debug!("NSS CA removed from {}", dir_arg);
+            true
+        }
+        Ok(o) => {
+            let msg = String::from_utf8_lossy(&o.stderr);
+            if msg.to_ascii_lowercase().contains("could not find")
+                || msg.to_ascii_lowercase().contains("not found")
+            {
+                true
+            } else {
+                tracing::debug!("NSS CA remove failed for {}: {}", dir_arg, msg.trim());
+                false
+            }
+        }
+        Err(e) => {
+            tracing::debug!("NSS certutil remove failed for {}: {}", dir_arg, e);
             false
         }
     }
@@ -697,5 +1208,60 @@ ID_LIKE=debian
         // Make sure we don't regress to the old substring-match bug.
         let content = "SOMEFIELD=maybearchived\nFOO=bar\n";
         assert_eq!(classify_os_release(content), "unknown");
+    }
+
+    #[test]
+    fn windows_thumbprint_match_ignores_spaces_and_case() {
+        let certutil_output =
+            "================ Certificate 0 ================\nCert Hash(sha1): AB CD EF 12\n";
+        assert!(normalized_hex_contains(certutil_output, "abcdef12"));
+    }
+
+    #[test]
+    fn enterprise_roots_block_added_to_empty_userjs() {
+        let got = add_enterprise_roots_block("");
+        let expected = format!("{}\n{}\n", FX_MARKER, FX_PREF);
+        assert_eq!(got, EnterpriseRootsEdit::AddedBlock(expected));
+    }
+
+    #[test]
+    fn enterprise_roots_block_respects_user_owned_pref() {
+        let existing = "user_pref(\"security.enterprise_roots.enabled\", false);\n";
+        assert_eq!(
+            add_enterprise_roots_block(existing),
+            EnterpriseRootsEdit::UserOwned
+        );
+    }
+
+    #[test]
+    fn strip_enterprise_roots_removes_only_our_block() {
+        let before = format!(
+            "user_pref(\"a\", 1);\n{}\n{}\nuser_pref(\"b\", 2);\n",
+            FX_MARKER, FX_PREF
+        );
+        let after = strip_enterprise_roots_block(&before).expect("should strip");
+        assert_eq!(after, "user_pref(\"a\", 1);\nuser_pref(\"b\", 2);\n");
+    }
+
+    #[test]
+    fn strip_enterprise_roots_refuses_bare_pref() {
+        assert!(strip_enterprise_roots_block(FX_PREF).is_none());
+    }
+
+    #[test]
+    fn sudo_reconcile_requires_root_and_non_root_user() {
+        assert_eq!(should_reconcile_for(0, Some("alice")), Some("alice"));
+        assert_eq!(should_reconcile_for(1000, Some("alice")), None);
+        assert_eq!(should_reconcile_for(0, Some("root")), None);
+        assert_eq!(should_reconcile_for(0, None), None);
+    }
+
+    #[test]
+    fn sudo_parse_passwd_home_extracts_home_field() {
+        assert_eq!(
+            sudo_parse_passwd_home("alice:x:1000:1000:Alice:/home/alice:/bin/bash\n"),
+            Some("/home/alice".to_string())
+        );
+        assert_eq!(sudo_parse_passwd_home("broken:x:1000"), None);
     }
 }

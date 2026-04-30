@@ -3,8 +3,15 @@ target/
 dist/
 /ca
 /config.json
+.env
+.vscode/
+.idea/
+*.code-workspace
 .DS_Store
+Thumbs.db
 /SCR-*.png
+**/__pycache__/
+*.pyc
 # Android SDK path (machine-local); CI builds the release APK — local Gradle optional.
 android/local.properties
 

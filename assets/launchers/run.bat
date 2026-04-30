@@ -62,8 +62,15 @@ if not "%UI_EXIT%"=="0" (
         echo.
         echo Copy everything above and open an issue on:
         echo   https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/issues
+        echo.
+        echo You can still use mhrv-f without the UI. The CLI provides the
+        echo same proxy engine on 127.0.0.1:8085 ^(HTTP^) and 127.0.0.1:8086
+        echo ^(SOCKS5^) using your existing config.
+        echo.
+        echo Falling back to the CLI now. Press Ctrl+C to stop it.
         echo ---------------------------------------------------
         pause
+        mhrv-f.exe
     )
 )
 

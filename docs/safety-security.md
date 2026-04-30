@@ -17,12 +17,18 @@ In your config directory you will see:
 If someone gets `ca.key` and you (or your devices) trust the corresponding CA, they can impersonate sites for you.
 
 ## Install / repair / remove
-- **Install**: use the launcher (`run.bat` / `run.command` / `run.sh`) or `mhrv-f --install-cert`.
+- **Install**: use the launcher (`run.bat` / `run.command` / `run.sh`), click **Install CA** in the desktop UI, or run `mhrv-f --install-cert`.
 - **Repair**: if you see cert errors, reinstall and re-trust the CA; then re-run Doctor.
-- **Remove (uninstall)**:
-  - remove the CA from your OS trust store
-  - delete the `ca/` directory from the app config folder
+- **Remove (uninstall)**: click **Remove CA** in the desktop UI or run `mhrv-f --remove-cert`.
+
+Removal is deliberately conservative:
+
+- It attempts to remove the CA from the OS trust store first.
+- It attempts Firefox/NSS cleanup by deleting the same CA nickname from discovered browser profiles.
+- It deletes the local `ca/` directory only after OS trust no longer appears active.
+- It does not delete your `config.json`, Apps Script deployment IDs, Vercel settings, tunnel-node settings, or logs.
+
+If removal fails, rerun the command from an elevated shell (`sudo` / Administrator). If it still fails, remove the `mhrv-f` / `MasterHttpRelayVPN` CA manually from the OS certificate manager, then delete the app config folder's `ca/` directory.
 
 ## Android-specific note (Android 7+)
 Android allows each app to opt out of user-installed CAs. Browsers usually opt in; banking/chat apps often do not. This is normal Android behavior. Use proxy-only mode or split tunneling for those apps.
-

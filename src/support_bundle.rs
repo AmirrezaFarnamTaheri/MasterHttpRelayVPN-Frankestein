@@ -45,6 +45,9 @@ fn sanitize_config(mut cfg: Config) -> Config {
             g.script_ids = crate::config::ScriptId::Many(masked);
         }
     }
+    if !cfg.vercel.auth_key.trim().is_empty() {
+        cfg.vercel.auth_key = "<redacted>".into();
+    }
     cfg.lan_token = None;
     cfg
 }
@@ -113,10 +116,7 @@ pub async fn export_support_bundle(cfg: &Config) -> Result<PathBuf, SupportBundl
     let status = status_api::render_status_json(
         &cfg.mode,
         (&cfg.listen_host, cfg.listen_port),
-        (
-            &cfg.listen_host,
-            cfg.socks5_port.unwrap_or(cfg.listen_port + 1),
-        ),
+        cfg.socks5_port.map(|p| (cfg.listen_host.as_str(), p)),
         None,
     );
     write_text(&out_dir.join("status.json"), &status)?;

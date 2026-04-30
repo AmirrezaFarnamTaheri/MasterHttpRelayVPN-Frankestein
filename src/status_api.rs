@@ -11,11 +11,11 @@ pub enum StatusApiError {
 pub fn render_status_json(
     mode: &str,
     http_listen: (&str, u16),
-    socks_listen: (&str, u16),
+    socks_listen: Option<(&str, u16)>,
     stats: Option<StatsSnapshot>,
 ) -> String {
     let (hh, hp) = http_listen;
-    let (sh, sp) = socks_listen;
+    let socks5 = socks_listen.map(|(sh, sp)| format!("{sh}:{sp}"));
     let stats_json = stats.map(|s| {
         serde_json::json!({
             "relay_calls": s.relay_calls,
@@ -41,7 +41,7 @@ pub fn render_status_json(
         "ok": true,
         "mode": mode,
         "http": format!("{hh}:{hp}"),
-        "socks5": format!("{sh}:{sp}"),
+        "socks5": socks5,
         "stats": stats_json,
     })
     .to_string()
@@ -59,7 +59,7 @@ pub async fn serve_status_api(
     port: u16,
     mode: String,
     http_listen: (String, u16),
-    socks_listen: (String, u16),
+    socks_listen: Option<(String, u16)>,
     fronter: Option<Arc<DomainFronter>>,
 ) -> Result<(), StatusApiError> {
     let addr = format!("{}:{}", bind_host, port);
@@ -97,7 +97,9 @@ pub async fn serve_status_api(
                     let json = render_status_json(
                         &mode,
                         (&http_listen.0, http_listen.1),
-                        (&socks_listen.0, socks_listen.1),
+                        socks_listen
+                            .as_ref()
+                            .map(|(host, port)| (host.as_str(), *port)),
                         stats,
                     );
                     ("HTTP/1.1 200 OK", json, "application/json; charset=utf-8")

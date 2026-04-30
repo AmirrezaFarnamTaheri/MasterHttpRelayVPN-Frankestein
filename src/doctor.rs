@@ -70,7 +70,7 @@ pub async fn run(config: &Config) -> DoctorReport {
                 level: DoctorLevel::Fail,
                 title: "Mode".into(),
                 detail: format!("Invalid mode: {e}"),
-                fix: Some("Set `mode` to one of: apps_script, google_only, full.".into()),
+                fix: Some("Set `mode` to one of: apps_script, vercel_edge, direct, full.".into()),
             });
             return DoctorReport { items };
         }
@@ -83,7 +83,7 @@ pub async fn run(config: &Config) -> DoctorReport {
         fix: None,
     });
 
-    // 3) Relay config presence (only required outside google_only).
+    // 3) Relay config presence.
     if matches!(mode, Mode::AppsScript | Mode::Full) {
         let groups = config.account_groups_resolved();
         if groups.is_empty() {
@@ -109,6 +109,31 @@ pub async fn run(config: &Config) -> DoctorReport {
                     "Enabled accounts: {}  Deployments: {}",
                     groups.len(),
                     total_ids
+                ),
+                fix: None,
+            });
+        }
+    } else if mode == Mode::VercelEdge {
+        if config.vercel.base_url.trim().is_empty() || config.vercel.auth_key.trim().is_empty() {
+            items.push(DoctorItem {
+                id: "vercel_edge",
+                level: DoctorLevel::Fail,
+                title: "Serverless JSON relay".into(),
+                detail: "vercel.base_url and vercel.auth_key are required.".into(),
+                fix: Some(
+                    "Deploy tools/vercel-json-relay or tools/netlify-json-relay, set AUTH_KEY, then copy the deployment URL and key into config.json."
+                        .into(),
+                ),
+            });
+        } else {
+            items.push(DoctorItem {
+                id: "vercel_edge",
+                level: DoctorLevel::Ok,
+                title: "Serverless JSON relay".into(),
+                detail: format!(
+                    "Endpoint: {}{}",
+                    config.vercel.base_url.trim_end_matches('/'),
+                    config.vercel.relay_path
                 ),
                 fix: None,
             });
@@ -162,7 +187,7 @@ pub async fn run(config: &Config) -> DoctorReport {
     }
 
     // 5) End-to-end relay probe (same as `test`), only when relay exists.
-    if matches!(mode, Mode::AppsScript | Mode::Full) {
+    if matches!(mode, Mode::AppsScript | Mode::VercelEdge) {
         let ok = test_cmd::run(config).await;
         items.push(DoctorItem {
             id: "relay_probe",
@@ -176,8 +201,16 @@ pub async fn run(config: &Config) -> DoctorReport {
             fix: if ok {
                 None
             } else {
-                Some("Common fixes: verify AUTH_KEY matches, replace dead deployment IDs, re-deploy Apps Script as 'Anyone', scan a different google_ip, or add backup accounts/IDs for quota exhaustion.".into())
+                Some("Common fixes: verify AUTH_KEY matches; for Apps Script, replace dead deployment IDs/re-deploy as 'Anyone'/scan a different google_ip; for serverless JSON, remove protection/routing pages and redeploy after env var changes.".into())
             },
+        });
+    } else if mode == Mode::Full {
+        items.push(DoctorItem {
+            id: "relay_probe",
+            level: DoctorLevel::Warn,
+            title: "Relay probe".into(),
+            detail: "`mhrv-f test` is intentionally skipped in full mode; verify full mode by browsing through the tunnel and checking the tunnel-node public IP.".into(),
+            fix: None,
         });
     }
 
@@ -202,7 +235,7 @@ pub fn apply_one_click_fixes(config: &Config) -> Vec<FixOutcome> {
     let mode = config.mode_kind().ok();
 
     // Fix 1: ensure CA files exist + attempt to install into OS trust store
-    // when needed (apps_script / google_only; full mode doesn't use MITM).
+    // when needed (apps_script / direct; full mode doesn't use MITM).
     if mode != Some(Mode::Full) {
         let base = crate::data_dir::data_dir();
         match MitmCertManager::new_in(&base) {

@@ -1,0 +1,10 @@
+[build]
+publish = "public"
+
+[[edge_functions]]
+function = "relay"
+path = "/p4r34m"
+
+[[edge_functions]]
+function = "relay"
+path = "/p4r34m/*"
