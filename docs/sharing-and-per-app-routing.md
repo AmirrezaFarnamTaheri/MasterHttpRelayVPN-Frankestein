@@ -54,6 +54,18 @@ not be reliable across Windows, macOS, and Linux.
 
 Use LAN sharing only on a private network you control.
 
+The readiness cards surface LAN sharing as warnings, not ordinary setup
+blockers:
+
+- `lan.exposure` appears when `listen_host` is `0.0.0.0` or `::`.
+- `lan.token` appears when LAN sharing has no HTTP/CONNECT token and no
+  allowlist.
+- `lan.allowlist` appears when SOCKS5 is exposed on LAN without an allowlist.
+
+These warnings do not prevent the proxy from starting, because LAN sharing can
+be intentional. They are there so an exposed listener is never quiet or
+surprising.
+
 1. Set `listen_host = "0.0.0.0"` in the UI's **Sharing and per-app routing**
    section.
 2. Keep `listen_port` and `socks5_port` on known values, for example `8085`

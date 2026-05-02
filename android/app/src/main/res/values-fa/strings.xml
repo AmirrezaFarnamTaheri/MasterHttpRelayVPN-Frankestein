@@ -9,6 +9,7 @@
 
     <string name="screen_intro_welcome">اینجا همان جایی است که ترافیک دستگاه را از طریق رلهٔ Google Apps Script خودتان هدایت می‌کنید—با VPN اختیاری (TUN) یا حالت فقط پروکسی. چند دقیقه زیر هر عنوان را بخوانید: می‌گوید اول چه بزنید، هر فیلد چه معنی دارد، و اگر خطا دیدید چه کار کنید.</string>
     <string name="field_mode">حالت</string>
+    <string name="help_section_serverless_json">ابزار tools/vercel-json-relay را روی Vercel یا tools/netlify-json-relay را روی Netlify منتشر کنید، AUTH_KEY را تنظیم کنید، مطمئن شوید /api/api خروجی JSON می‌دهد، سپس URL سایت و همان کلید را اینجا وارد کنید. این حالت برای برنامه‌های HTTPS همچنان به گواهی MITM محلی نیاز دارد.</string>
     <string name="help_section_mode">انتخاب کنید ترافیک چطور از گوشی خارج شود. Apps Script (MITM) تجربهٔ کامل با بازرسی HTTPS است. Direct برای رسیدن به script.google.com قبل از داشتن رله و همچنین fronting_groups فایل کانفیگ است. Full tunnel به گرهٔ تونل شما نیاز دارد و مسیر نصب CA کاربر را حذف می‌کند.</string>
     <string name="help_section_relay">همان URLهای دیپلوی یا IDهای خام و auth_key که در Apps Script گذاشتید را اینجا بگذارید. چند ID بار را پخش می‌کند—در حالت تونل کامل مهم است. وقتی حالت Direct یا Serverless JSON است این بخش غیرفعال است.</string>
     <string name="help_section_network">google_ip یعنی IPv4 لبهٔ گوگل؛ front_domain نام میزبان SNI بیرونی TLS است. جفت اشتباه = timeout — قبل از سرزنش رله، Auto-detect و تستر SNI را امتحان کنید.</string>
@@ -19,6 +20,7 @@
 
     <!-- Section headers -->
     <string name="sec_apps_script_relay">رلهٔ Apps Script</string>
+    <string name="sec_serverless_json_relay">رلهٔ Serverless JSON</string>
     <string name="sec_network">شبکه</string>
     <string name="sec_sni_pool_tester">مجموعهٔ SNI + تستر</string>
     <string name="sec_advanced">پیشرفته</string>
@@ -28,6 +30,7 @@
 
     <!-- Primary actions -->
     <string name="btn_connect">اتصال</string>
+    <string name="btn_save_and_connect">ذخیره و اتصال</string>
     <string name="btn_disconnect">قطع</string>
     <string name="btn_install_mitm">نصب گواهی MITM</string>
     <string name="btn_auto_detect_google_ip">تشخیص خودکار google_ip</string>
@@ -36,6 +39,7 @@
     <string name="btn_add">افزودن</string>
     <string name="btn_clear">پاک</string>
     <string name="btn_copy">کپی</string>
+    <string name="btn_fix">رفع مشکل</string>
     <string name="btn_install">نصب</string>
     <string name="btn_cancel">انصراف</string>
     <string name="btn_paste">Paste</string>
@@ -48,6 +52,47 @@
     <string name="snack_config_imported">Config imported</string>
     <string name="snack_config_copied">Config copied to clipboard</string>
     <string name="snack_invalid_config">Invalid config</string>
+    <string name="connect_blocked_by">اتصال به‌دلیل %1$s غیرفعال است</string>
+    <string name="warn_preserved_account_groups">گروه‌های حساب واردشده از دسکتاپ در پیکربندی حفظ می‌شوند، اما اندروید فقط اولین گروه فعال/ساده را ویرایش می‌کند. برای ویرایش کامل چندگروهی از نسخه دسکتاپ استفاده کنید.</string>
+    <string name="repair_dialog_title">رفع مانع اتصال</string>
+    <string name="repair_target">هدف: %1$s</string>
+    <string name="repair_anchor">باز کنید: %1$s</string>
+    <string name="repair_account_groups_label">افزودن Deployment IDهای Apps Script</string>
+    <string name="repair_account_groups_body">از بخش رلهٔ Apps Script پایین همین کارت استفاده کنید. برای حالت انتخاب‌شده حداقل یک URL یا ID دیپلوی وارد کنید.</string>
+    <string name="repair_account_auth_label">تنظیم AUTH_KEY برای Apps Script</string>
+    <string name="repair_account_auth_body">از بخش رلهٔ Apps Script پایین همین کارت استفاده کنید. کلید باید با AUTH_KEY داخل Code.gs یا CodeFull.gs یکی باشد.</string>
+    <string name="repair_serverless_base_label">تنظیم مبدأ Serverless</string>
+    <string name="repair_serverless_base_body">از بخش رلهٔ Serverless JSON استفاده کنید. مبدأ سایت Vercel یا Netlify را بدون /api/api وارد کنید.</string>
+    <string name="repair_serverless_path_label">تنظیم مسیر رله</string>
+    <string name="repair_serverless_path_body">از بخش رلهٔ Serverless JSON استفاده کنید. ابزارهای همراه پروژه معمولاً /api/api هستند و مسیر باید با / شروع شود.</string>
+    <string name="repair_serverless_auth_label">تنظیم AUTH_KEY برای Serverless</string>
+    <string name="repair_serverless_auth_body">از بخش رلهٔ Serverless JSON استفاده کنید. کلید باید با متغیر محیطی AUTH_KEY در دیپلوی یکی باشد.</string>
+    <string name="repair_direct_ip_label">اصلاح IP لبهٔ گوگل</string>
+    <string name="repair_direct_ip_body">از بخش شبکه استفاده کنید. فیلد را خالی کنید تا هنگام اتصال تشخیص خودکار انجام شود، یا یک IP معتبر وارد کنید.</string>
+    <string name="repair_direct_sni_label">اصلاح SNI فرانت</string>
+    <string name="repair_direct_sni_body">از بخش شبکه استفاده کنید. یک hostname مثل www.google.com وارد کنید، نه آدرس IP.</string>
+    <string name="repair_local_listener_label">اصلاح شنوندهٔ محلی</string>
+    <string name="repair_local_listener_body">از فیلدهای شنوندهٔ محلی استفاده کنید. listen host باید تنظیم باشد و پورت‌های HTTP/SOCKS باید معتبر و متفاوت باشند.</string>
+    <string name="repair_ca_trust_label">نصب و اعتماد به CA محلی</string>
+    <string name="repair_ca_trust_body">از گزینه نصب گواهی استفاده کنید. اندروید CA را به‌عنوان اعتبار کاربر نگه می‌دارد؛ بعضی کلاینت‌ها همچنان تنظیم اعتماد جداگانه می‌خواهند.</string>
+    <string name="repair_android_app_ca_label">بررسی پشتیبانی CA در برنامه</string>
+    <string name="repair_android_app_ca_body">در اندروید ۷ و جدیدتر، برنامه‌ها می‌توانند CAهای نصب‌شده توسط کاربر را نادیده بگیرند. اگر مرورگر کار می‌کند ولی یک برنامه نه، از تنظیمات پراکسی/اعتماد همان برنامه یا حالت Proxy-only استفاده کنید.</string>
+    <string name="repair_lan_exposure_label">بازبینی اشتراک LAN</string>
+    <string name="repair_lan_exposure_body">از Advanced -&gt; LAN sharing استفاده کنید. فقط وقتی روشن باشد که دستگاه‌های مطمئن در این شبکه باید به پورت‌های پراکسی محلی شما برسند.</string>
+    <string name="repair_lan_token_label">تنظیم توکن LAN یا IPهای مجاز</string>
+    <string name="repair_lan_token_body">از Advanced -&gt; LAN sharing استفاده کنید. برای HTTP/CONNECT توکن LAN بگذارید، یا قبل از اشتراک پراکسی IP/CIDRهای مجاز را اضافه کنید.</string>
+    <string name="repair_lan_allowlist_label">افزودن IPهای مجاز SOCKS5</string>
+    <string name="repair_lan_allowlist_body">از Advanced -&gt; LAN sharing استفاده کنید. SOCKS5 نمی‌تواند هدر توکن بفرستد، پس SOCKS5 روی LAN به IP/CIDR مجاز نیاز دارد.</string>
+    <string name="repair_full_codefull_label">دیپلوی CodeFull.gs</string>
+    <string name="repair_full_codefull_body">حالت Full به فایل Apps Script مخصوص تونل کامل یعنی CodeFull.gs نیاز دارد. Code.gs کلاسیک ممکن است تست رله را پاس کند، اما عملیات تونل را فوروارد نمی‌کند.</string>
+    <string name="repair_full_node_url_label">تنظیم URL تونل‌نود</string>
+    <string name="repair_full_node_url_body">در CodeFull.gs مقدار TUNNEL_SERVER_URL را روی مبدأ عمومی tunnel-node بگذارید. قبل از شروع، /healthz را با مرورگر یا curl بررسی کنید.</string>
+    <string name="repair_full_auth_label">هماهنگ کردن کلید تونل</string>
+    <string name="repair_full_auth_body">مقدار TUNNEL_AUTH_KEY داخل CodeFull.gs باید دقیقاً با متغیر محیطی TUNNEL_AUTH_KEY روی tunnel-node یکی باشد.</string>
+    <string name="repair_full_udp_label">فعال کردن SOCKS5 برای کلاینت‌های UDP</string>
+    <string name="repair_full_udp_body">UDP در حالت Full از SOCKS5 UDP ASSOCIATE استفاده می‌کند. اگر برنامه‌ها به UDP نیاز دارند، پورت SOCKS5 را تنظیم کنید و با یک کلاینت UDP تست بگیرید.</string>
+    <string name="repair_full_health_label">بررسی سلامت تونل کامل</string>
+    <string name="repair_full_health_body">حالت Full را شروع کنید، یک صفحه بررسی IP عمومی باز کنید و با لاگ‌های tunnel-node مقایسه کنید. IP باید با VPS یا خروجی tunnel-node یکی باشد.</string>
     <string name="dialog_export_title">Export config</string>
     <string name="dialog_export_warning">This includes your auth key. Only share with people you trust.</string>
     <string name="dialog_import_title">Import config?</string>
@@ -65,6 +110,9 @@
     <string name="field_deployment_urls">آدرس‌(های) Deployment یا Script ID</string>
     <string name="placeholder_paste_ids">یک URL/ID، یا چند مورد با خط جدید/فاصله/ویرگول/نقطه‌ویرگول جدا کنید</string>
     <string name="field_auth_key">کلید احراز (auth_key)</string>
+    <string name="field_serverless_base_url">URL پایه</string>
+    <string name="field_serverless_auth_key">AUTH_KEY</string>
+    <string name="field_serverless_relay_path">مسیر رله</string>
     <string name="field_google_ip">google_ip</string>
     <string name="field_front_domain">دامنهٔ فرانت</string>
     <string name="field_connection_mode">نوع اتصال</string>
@@ -92,6 +140,9 @@
     <!-- Supporting / helper text -->
     <string name="help_deployment_urls">URL کامل https://script.google.com/macros/s/…/exec یا ID خام از ویرایشگر Apps Script. چند ID (هر ردیف یکی) بار را می‌چرخاند—در تونل کامل ظرفیت بیشتر می‌شود. هر ID باید با auth_key پایین (برای هر حساب گوگل در دسکتاپ گروه جدا) هماهنگ باشد.</string>
     <string name="help_auth_key">باید با مقدار AUTH_KEY داخل Code.gs یکی باشد. اگر اشتباه باشد همهٔ فراخوانی‌ها فوراً خطا می‌دهند—فاصلهٔ اضافه هنگام کپی را چک کنید.</string>
+    <string name="help_serverless_base_url">نمونه: https://your-project.vercel.app یا https://your-site.netlify.app. مسیر /api/api را اینجا وارد نکنید؛ آن مقدار برای فیلد مسیر رله است.</string>
+    <string name="help_serverless_auth_key">باید با متغیر محیطی AUTH_KEY در پروژهٔ Vercel/Netlify یکی باشد. آن را طولانی و خصوصی نگه دارید.</string>
+    <string name="help_serverless_relay_path">برای هر دو ابزار JSON همراه پروژه معمولاً /api/api است. باید با / شروع شود.</string>
     <string name="help_mode_vpn_tun">مجوز VPN اندروید را می‌گیرد تا بدون پروکسی per-app بتوانید هدایت کنید. بانک و پیام‌رسان ممکن است به CA کاربر اعتماد نکنند—جزئیات در راهنمای گام‌به‌گام است.</string>
     <string name="help_mode_proxy_only">بدون VPN سیستم. بعد از Connect، در تنظیمات Wi‑Fi یا هر اپ، HTTP 127.0.0.1:%1$d و SOCKS5 127.0.0.1:%2$d را بگذارید. فقط برنامه‌هایی که این تنظیم را رعایت می‌کنند رد می‌شوند.</string>
     <string name="help_sni_pool">نام‌های فعال به‌صورت چرخشی هنگام TLS به google_ip استفاده می‌شوند. قبل از اتکا «تست همه» را بزنید—اگر همه fail شدند معمولاً google_ip یا DNS مشکل دارد. خالی گذاشتن همه یعنی Rust لیست پیش‌فرض گوگل را باز کند.</string>
@@ -105,6 +156,12 @@
     <string name="adv_verify_tls_help">در حالت عادی روشن بماند. خاموش یعنی اعتبارسنجی TLS تا لبهٔ گوگل رد می‌شود—فقط برای عیب‌یابی handshake.</string>
     <string name="adv_lan_sharing">اشتراک پروکسی در شبکه</string>
     <string name="adv_lan_sharing_help">شنونده‌ها روی 0.0.0.0 قرار می‌گیرند تا دستگاه‌های دیگر همین وای‌فای بتوانند از HTTP/SOCKS این گوشی استفاده کنند. هر کسی در شبکه می‌تواند سهمیهٔ Apps Script شما را مصرف کند.</string>
+    <string name="adv_lan_token">توکن LAN (HTTP/CONNECT)</string>
+    <string name="adv_lan_token_help">توکن اختیاری که کلاینت‌های HTTP/CONNECT باید در X-MHRV-F-Token بفرستند. این SOCKS5 را محافظت نمی‌کند؛ برای آن از IPهای مجاز استفاده کنید.</string>
+    <string name="adv_lan_allowlist">IP/CIDRهای مجاز LAN</string>
+    <string name="adv_lan_allowlist_help">هر خط یک IP یا CIDR، مثل 192.168.1.20 یا 192.168.1.0/24. قبل از اشتراک SOCKS5 روی LAN لازم است.</string>
+    <string name="adv_youtube_via_relay">ارسال یوتیوب از طریق رله</string>
+    <string name="adv_youtube_via_relay_help">ترافیک HTML/API یوتیوب را به‌جای SNI rewrite از Apps Script عبور می‌دهد. برای بعضی حالت‌های Restricted Mode کمک می‌کند، اما سهمیه مصرف می‌کند و برای صفحه‌های ویدیویی کندتر است.</string>
     <string name="adv_log_level">log_level</string>
     <string name="adv_parallel_relay">parallel_relay: %1$d</string>
     <string name="adv_parallel_relay_help">چند تلاش رلهٔ تکراری برای هر درخواست منطقی. ۱ عادی است؛ مقدار بالاتر سهمیهٔ Apps Script را سریع‌تر می‌سوزاند.</string>
@@ -153,6 +210,10 @@
     <string name="guide_body_first_run">۱) Code.gs را از assets پروژه در script.google.com بگذارید و به‌صورت Web app منتشر کنید.\n۲) یک یا چند URL دیپلوی (یا ID خام) و auth_key را اینجا وارد کنید.\n۳) وقتی برنامه پیشنهاد داد، گواهی MITM را نصب کنید.\n۴) تستر SNI را اجرا کنید؛ اگر همهٔ ردیف‌ها fail شدند google_ip یا front_domain را اصلاح کنید.\n۵) حالت VPN (TUN) یا فقط پروکسی را انتخاب و Connect بزنید.</string>
     <string name="guide_title_relay">رلهٔ Apps Script</string>
     <string name="guide_body_relay">از URL کامل https://script.google.com/.../exec یا شناسهٔ خام deployment استفاده کنید؛ چند ID در حالت تونل کامل به‌صورت چرخشی مصرف می‌شوند. auth_key باید با مقدار داخل اسکریپت یکسان باشد. اگر نمی‌دانید کدام IP لبهٔ گوگل برای شما جواب می‌دهد، «تشخیص خودکار google_ip» را بزنید یا خروجی `mhrv-f scan-ips` روی دسکتاپ را امتحان کنید.</string>
+    <string name="guide_title_groups">Deployment IDها، auth keyها و گروه‌ها</string>
+    <string name="guide_body_groups">در اندروید این صفحه IDهای Apps Script و auth_key موردنیاز حالت انتخاب‌شده را می‌گیرد. در دسکتاپ همین مفهوم به‌صورت گروه‌های حساب نمایش داده می‌شود: یک گروه معمولاً یعنی یک حساب/استخر سهمیهٔ گوگل، یک AUTH_KEY و یک یا چند deployment ID از همان حساب. چند ID در یک حساب به چرخش و fallback کمک می‌کند اما سهمیهٔ همان حساب را مصرف می‌کند. چند گروه یعنی چند حساب یا استخر پشتیبان. اگر صفحه‌ها با خطای quota یا 504 شکست می‌خورند، قبل از زیاد کردن گزینه‌های سرعت، ظرفیت اضافه کنید.</string>
+    <string name="guide_title_advanced_tuning">اثر تنظیمات پیشرفته بر تجربه</string>
+    <string name="guide_body_advanced_tuning">به‌ترتیب تنظیم کنید: اول دسترسی google_ip/front_domain/SNI را درست کنید، بعد ظرفیت deployment اضافه کنید، سپس auto-tune متعادل را به‌کار ببرید. parallel dispatch بالاتر می‌تواند صفحه‌های کند را بهتر کند اما سهمیه را سریع‌تر مصرف می‌کند. range parallelism بالاتر می‌تواند دانلودهای بزرگ را بهتر کند اما فراخوانی‌های هم‌زمان رله را زیاد می‌کند. chunk بزرگ‌تر تعداد فراخوانی‌ها را کم می‌کند اما هر فراخوانی رله طولانی‌تر می‌شود. timeout طولانی‌تر خطای کاذب را در شبکهٔ کند کم می‌کند اما گیر واقعی را کندتر حس می‌کنید. proxy-only و app splitting فقط انتخاب مسیر هستند؛ سهمیهٔ رلهٔ بیشتری نمی‌سازند.</string>
     <string name="guide_title_certificate">گواهی MITM (HTTPS)</string>
     <string name="guide_body_certificate">«نصب گواهی MITM» را بزنید؛ فایل در Downloads/mhrv-ca.crt ذخیره می‌شود و تنظیمات باز می‌شود. «CA certificate» را از جست‌وجو باز کنید و فایل را از Downloads انتخاب کنید — نه مسیر گواهی VPN کاربر. اندروید ۱۱+ برای هر CA کاربر قفل صفحه می‌خواهد.</string>
     <string name="guide_title_sni">مجموعهٔ SNI + تستر</string>

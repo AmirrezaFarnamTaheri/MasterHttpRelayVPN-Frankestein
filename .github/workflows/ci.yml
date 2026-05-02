@@ -36,7 +36,19 @@ jobs:
       - name: Apps Script helper tests
         run: |
           set -euo pipefail
-          node assets/apps_script/tests/edge_dns_test.js
+          for test in assets/apps_script/tests/*.js; do
+            node "$test"
+          done
+
+      - name: Repository cleanliness
+        run: python3 tools/check-repo-cleanliness.py
+
+      - name: Markdown local links
+        run: python3 tools/check-doc-links.py
+
+      - name: Generated readiness contracts are current
+        shell: pwsh
+        run: ./tools/generate-readiness-contract.ps1 -Check
 
       - name: JSON, XML, Android strings, and stale-source scan
         run: |

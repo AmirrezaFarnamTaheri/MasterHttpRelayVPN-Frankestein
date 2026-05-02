@@ -144,6 +144,29 @@ What you configure:
 the full tunnel. Verify by starting the tunnel, browsing, and checking that an
 IP-check page shows the tunnel-node public IP.
 
+Full-mode readiness is intentionally split between local blockers and
+external checks:
+
+- `account_groups.*` still blocks Start when no full-mode Apps Script
+  deployment ID or `AUTH_KEY` is configured.
+- `full.codefull_deployment` reminds you that each deployment ID must point to
+  `CodeFull.gs`, not the classic `Code.gs` relay.
+- `full.tunnel_node_url` means `CodeFull.gs` must set `TUNNEL_SERVER_URL` to
+  the public tunnel-node origin.
+- `full.tunnel_auth` means `TUNNEL_AUTH_KEY` must match exactly between
+  `CodeFull.gs` and tunnel-node.
+- `full.udp_support` warns when no SOCKS5 listener is configured for clients
+  that expect SOCKS5 UDP ASSOCIATE.
+- `full.tunnel_health` is the final smoke test: run Doctor with
+  `--tunnel-node-url`, start full mode, open an IP-check page, and compare with
+  tunnel-node logs.
+
+The `full.*` rows are warnings rather than blockers because the client config
+cannot directly inspect Apps Script constants or VPS environment variables.
+Tunnel-node also exposes `/health/details` with version and capability flags
+for operator dashboards and `mhrv-f doctor --tunnel-node-url
+https://<tunnel-node>`.
+
 Do not confuse `full` mode with `upstream_socks5`. Full mode owns the tunnel
 path:
 
@@ -275,7 +298,9 @@ Doctor/Test again.
 2. Build and run `tunnel-node` on the VPS.
 3. Set matching authentication on both sides.
 4. In the client, choose `full` and configure the account group.
-5. Start the tunnel and verify with an IP-check page and tunnel-node logs.
+5. Run `mhrv-f doctor --tunnel-node-url https://<tunnel-node>` to verify
+   `/health/details` before starting.
+6. Start the tunnel and verify with an IP-check page and tunnel-node logs.
 
 ### Recipe: Vercel XHTTP Helper
 

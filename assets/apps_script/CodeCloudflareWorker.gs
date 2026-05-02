@@ -18,6 +18,16 @@ const AUTH_KEY = "CHANGE_ME_TO_A_STRONG_CLIENT_SECRET";
 const WORKER_URL = "https://example.workers.dev";
 const WORKER_AUTH_KEY = "CHANGE_ME_TO_A_STRONG_WORKER_SECRET";
 const DIAGNOSTIC_MODE = false;
+const HELPER_KIND = "apps_script_cloudflare_worker";
+const HELPER_VERSION = "2026-05-02.batch20";
+const HELPER_PROTOCOL = "mhrv-f.apps-script.v1";
+const HELPER_FEATURES = [
+  "single",
+  "batch",
+  "cloudflare_worker_exit",
+  "safe_fetchall_fallback",
+  "header_privacy",
+];
 
 const DECOY_HTML = '<!DOCTYPE html><html><head><title>Apps Script</title></head><body>The script completed but did not return anything.</body></html>';
 
@@ -42,6 +52,9 @@ const SKIP_HEADERS = {
   origin: 1,
   referer: 1,
 };
+
+// If fetchAll fails as a whole, retry only methods that are safe to replay.
+const SAFE_REPLAY_METHODS = { GET: 1, HEAD: 1, OPTIONS: 1 };
 
 function doPost(e) {
   try {
@@ -75,6 +88,10 @@ function _doBatch(items) {
 
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
+    if (!item || typeof item !== "object") {
+      errorMap[i] = "bad item";
+      continue;
+    }
     if (!_validUrl(item.u)) {
       errorMap[i] = "bad url";
       continue;
@@ -89,22 +106,47 @@ function _doBatch(items) {
         muteHttpExceptions: true,
         followRedirects: false,
       },
+      _m: (item.m || "GET").toUpperCase(),
     });
   }
 
-  var responses = [];
+  var responseMap = {};
   if (fetchArgs.length > 0) {
-    responses = UrlFetchApp.fetchAll(fetchArgs.map(function(x) { return x._o; }));
+    try {
+      var responses = UrlFetchApp.fetchAll(fetchArgs.map(function(x) { return x._o; }));
+      for (var a = 0; a < fetchArgs.length; a++) {
+        responseMap[fetchArgs[a]._i] = responses[a];
+      }
+    } catch (err) {
+      for (var r = 0; r < fetchArgs.length; r++) {
+        try {
+          if (!SAFE_REPLAY_METHODS[fetchArgs[r]._m]) {
+            errorMap[fetchArgs[r]._i] = "batch fetchAll failed; unsafe method not replayed";
+            continue;
+          }
+          var fallbackReq = fetchArgs[r]._o;
+          var fallbackUrl = fallbackReq.url;
+          var fallbackOpts = {};
+          for (var key in fallbackReq) {
+            if (fallbackReq.hasOwnProperty(key) && key !== "url") {
+              fallbackOpts[key] = fallbackReq[key];
+            }
+          }
+          responseMap[fetchArgs[r]._i] = UrlFetchApp.fetch(fallbackUrl, fallbackOpts);
+        } catch (singleErr) {
+          errorMap[fetchArgs[r]._i] = String(singleErr);
+        }
+      }
+    }
   }
 
   var results = [];
-  var rIdx = 0;
   for (var j = 0; j < items.length; j++) {
     if (errorMap.hasOwnProperty(j)) {
       results.push({ e: errorMap[j] });
     } else {
-      var parsed = _parseWorkerJson(responses[rIdx++]);
-      results.push(parsed);
+      var resp = responseMap[j];
+      results.push(resp ? _parseWorkerJson(resp) : { e: "fetch failed" });
     }
   }
   return _json({ q: results });
@@ -146,10 +188,22 @@ function _validUrl(url) {
   return typeof url === "string" && /^https?:\/\//i.test(url);
 }
 
-function doGet(_e) {
+function doGet(e) {
+  if (e && e.parameter && e.parameter.compat === "1") {
+    return _json(_compatInfo());
+  }
   return ContentService
     .createTextOutput(DECOY_HTML)
     .setMimeType(ContentService.MimeType.HTML);
+}
+
+function _compatInfo() {
+  return {
+    kind: HELPER_KIND,
+    version: HELPER_VERSION,
+    protocol: HELPER_PROTOCOL,
+    features: HELPER_FEATURES,
+  };
 }
 
 function _decoyOrError(jsonBody) {

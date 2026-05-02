@@ -111,11 +111,14 @@ Use the full guide before enabling LAN exposure:
 ## Troubleshooting And Reference
 
 - Guided diagnostics: [`docs/doctor.md`](doctor.md)
+- Shared readiness IDs and repair targets: [`docs/readiness-matrix.md`](readiness-matrix.md)
 - Symptom decision tree: [`docs/troubleshooting.md`](troubleshooting.md)
 - Safety and CA lifecycle: [`docs/safety-security.md`](safety-security.md)
 - Advanced knobs: [`docs/advanced-options.md`](advanced-options.md)
 - Field notes and edge candidates: [`docs/field-notes.md`](field-notes.md)
 - Glossary: [`docs/glossary.md`](glossary.md)
+- Maintainer release checklist:
+  [`docs/release-checklist.md`](release-checklist.md)
 
 ## Offline Or Blocked GitHub Releases
 

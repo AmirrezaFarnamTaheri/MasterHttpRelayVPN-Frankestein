@@ -1,6 +1,6 @@
 # Elevation Audit Roadmap Source
 
-Last updated: 2026-04-30
+Last updated: 2026-05-01
 
 This document is the living source of truth for improving, enhancing, and
 elevating the UI, UX, in-app help, documentation, guides, and support surfaces
@@ -114,7 +114,7 @@ breakage even before visual polish begins.
 | P0.1 | Android Apps Script config uses legacy `script_ids` / `auth_key` instead of `account_groups` | `ConfigStore.toJson()` writes top-level legacy keys; `Config::validate()` requires `account_groups` for `apps_script` / `full` | Either serialize one default `account_groups` entry from Android, or add a Rust compatibility migration from legacy keys into `account_groups`, then test both paths. |
 | P0.2 | Android import/export ignores canonical `account_groups` | `ConfigStore.loadFromJson()` reads top-level `script_ids`, not `account_groups` | Teach Android to read canonical groups and map the first simple group into the current mobile fields; preserve complex multi-group JSON where the mobile UI cannot fully edit it. |
 | P0.3 | Desktop save still omits some `Config` fields | Static field comparison: `Config` has 47 fields; `ConfigWire` has 45; missing `domain_overrides` and `enable_batching` | Add `domain_overrides` to `ConfigWire`; decide whether `enable_batching` is deprecated, hidden, or intentionally omitted. Add a field-parity test. |
-| P0.4 | Android config model lacks many backend fields | Android reads/writes a subset: no canonical `account_groups`, `domain_overrides`, `relay_rate_limit_*`, runtime profile, timeout, outage reset, max body, `youtube_via_relay`, etc. | Classify every backend field as edit, preserve, default, ignore, or Android-only; preserve fields that Android cannot edit. |
+| P0.4 | Android config model lacks many backend fields | Android used to read/write a smaller subset; Batches 1, 18, and 19 closed canonical `account_groups`, LAN access controls, and `youtube_via_relay`. Remaining gaps include `domain_overrides`, `relay_rate_limit_*`, runtime profile, timeout, outage reset, max body, and other expert fields. | Classify every backend field as edit, preserve, default, ignore, or Android-only; preserve fields that Android cannot edit. |
 | P0.5 | SNI defaults are duplicated across Rust and Android | Android comment says it mirrors Rust `DEFAULT_GOOGLE_SNI_POOL` | Add a parity check that fails when the lists differ. |
 | P0.6 | Android visible copy still has hard-coded English | `ModeOverviewCard`, mode labels, `Block QUIC`, language button labels | Move all user-facing copy to resources, then enforce values/values-fa parity. |
 | P0.7 | Persian Android strings are missing keys | English 150 keys; Persian 138 keys; missing serverless and guide/group keys | Fill missing keys and add a script to keep parity. |
@@ -827,8 +827,8 @@ Tasks:
 |---|---|---|---|---|
 | A2.1 | Design minimal account group editor for Setup | todo | | |
 | A2.2 | Keep weight/enabled/advanced pool controls in Advanced | todo | | |
-| A2.3 | Add mode readiness checklist | todo | | |
-| A2.4 | Add mode-specific "What to deploy" row with open buttons | todo | | |
+| A2.3 | Add mode readiness checklist | review | | Batch 4 added Desktop selected-mode readiness panel for Apps Script, Serverless JSON, Direct, and Full. Batch 5 added Android readiness rows with stable blocker IDs and preserved advanced-group warning. |
+| A2.4 | Add mode-specific "What to deploy" row with open buttons | in_progress | | Batch 4 added mode capabilities/cautions; explicit open buttons/docs links still pending. |
 | A2.5 | Add serverless JSON health expectation: `/api/api` must return JSON | todo | | |
 | A2.6 | Add Full tunnel verification guidance without pretending Test relay proves it | todo | | |
 
@@ -1627,18 +1627,18 @@ Tasks:
 
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
-| G2.1 | Create a stable readiness ID list, for example `missing_account_group`, `missing_serverless_base_url`, `missing_google_ip`, `missing_ca`, `lan_token_missing`, `unsafe_lan_exposure` | todo | | |
-| G2.2 | Map `Config::validate()` failures to readiness IDs instead of free-form UI-only messages | todo | | |
-| G2.3 | Add Desktop readiness rendering that uses the same IDs as Rust validation | todo | | |
-| G2.4 | Add Android readiness rendering that uses the same IDs as Rust validation or a generated mirror of the matrix | todo | | |
-| G2.5 | Add mode-specific readiness fixtures for Apps Script, Serverless JSON, direct, full, and legacy `google_only` | todo | | |
-| G2.6 | Add tests that Desktop and Android readiness examples match Rust validation outcomes | todo | | |
-| G2.7 | Define readiness severity levels: blocker, warning, safety warning, optimization hint | todo | | |
-| G2.8 | Ensure Start/Connect disabled states include one primary next action and avoid dumping raw validation text | todo | | |
-| G2.9 | Add CA-trust readiness rules per platform: Windows, macOS, Linux/NSS/Firefox, Android user CA, and Android app trust limitations | todo | | |
-| G2.10 | Add full-mode readiness rules for CodeFull, tunnel-node URL/auth, UDP support expectations, and cloud relay health | todo | | |
-| G2.11 | Add LAN-sharing readiness rules for listen host, LAN token, allowlist, firewall, and exposure copy | todo | | |
-| G2.12 | Ensure every readiness message has English/Persian Android copy and matching Desktop/docs wording | todo | | |
+| G2.1 | Create a stable readiness ID list, for example `missing_account_group`, `missing_serverless_base_url`, `missing_google_ip`, `missing_ca`, `lan_token_missing`, `unsafe_lan_exposure` | review | | Batch 6 added `src/readiness.rs` with stable Rust IDs and `ReadinessIds.kt`; Batch 8 expanded the list to config version/mode, scan, ports, rate limit, domain overrides, and fronting groups; Batch 11 makes Android IDs generated from Rust; Batch 12 adds CA/LAN IDs; Batch 13 adds full-mode tunnel readiness IDs. |
+| G2.2 | Map `Config::validate()` failures to readiness IDs instead of free-form UI-only messages | review | | Batch 6 added `mode_readiness(&Config)`; Batch 7 bridges mode/start blockers; Batch 8 converts the remaining current `ConfigError::Invalid` validation branches to structured readiness IDs and repair targets. |
+| G2.3 | Add Desktop readiness rendering that uses the same IDs as Rust validation | review | | Batch 6 added IDs to Desktop readiness rows, renders missing IDs, and added UI tests for shared ID usage. |
+| G2.4 | Add Android readiness rendering that uses the same IDs as Rust validation or a generated mirror of the matrix | in_progress | | Batch 5 added local Android readiness rendering; Batch 6 centralized Kotlin IDs in `ReadinessIds.kt`; Batch 11 generates Android IDs and repair targets from `src/readiness.rs` and checks freshness in CI. Batch 16 adds `ReadinessRule` catalog metadata and generates `docs/readiness-matrix.md` from the same Rust source. Android still consumes generated IDs/targets rather than a generated Kotlin rule renderer. |
+| G2.5 | Add mode-specific readiness fixtures for Apps Script, Serverless JSON, direct, full, and legacy `google_only` | in_progress | | Batch 6 added Rust fixtures for Apps Script, Serverless JSON, and Direct plus Desktop fixtures for Apps Script and Direct; Batch 13 adds a Rust full-mode external tunnel readiness fixture. Legacy `google_only` fixture remains. |
+| G2.6 | Add tests that Desktop and Android readiness examples match Rust validation outcomes | in_progress | | Batch 6 added Rust readiness tests and Desktop dashboard ID tests; Batch 7 added validation bridge tests for Apps Script, Serverless JSON, and Direct; Batch 8 added deep validation ID tests. Batch 16 adds a Rust catalog-completeness test plus generator checks that every readiness ID has one matrix rule and matching repair target. Android remains static/CI-only. |
+| G2.7 | Define readiness severity levels: blocker, warning, safety warning, optimization hint | in_progress | | Batch 6 added `ReadinessSeverity::{Blocker, Warning, Hint}` and `blocks_start()`; Batch 7 added repair metadata; Batch 12 uses non-blocking warnings for CA/LAN; Batch 13 extends warnings to full-mode external tunnel checks. Safety-warning subtypes and optimization hints remain. |
+| G2.8 | Ensure Start/Connect disabled states include one primary next action and avoid dumping raw validation text | in_progress | | Batch 7 adds `ReadinessRepair` metadata and validation messages with `Next:` labels plus repair targets; Batch 8 covers all current config validation branches; Batch 9 adds Desktop repair buttons; Batch 10 adds Android `Fix` dialogs; Batch 11 generates Android repair targets from Rust. Batch 17 adds generated repair anchors with Desktop/Android section-field locations and surfaces them in Desktop tooltips and Android repair dialogs. Actual scroll/focus automation remains. |
+| G2.9 | Add CA-trust readiness rules per platform: Windows, macOS, Linux/NSS/Firefox, Android user CA, and Android app trust limitations | in_progress | | Batch 12 adds shared `ca.trust` and `ca.android_app_trust` warnings, Desktop repair routing, Android CA install-state warning, localized Android repair copy, and docs. OS/NSS-specific live trust probes remain. |
+| G2.10 | Add full-mode readiness rules for CodeFull, tunnel-node URL/auth, UDP support expectations, and cloud relay health | review | | Batch 13 adds `full.codefull_deployment`, `full.tunnel_node_url`, `full.tunnel_auth`, `full.udp_support`, and `full.tunnel_health` warnings across Rust, Desktop, Android, generated Kotlin targets, and docs. Batch 14 adds matching Doctor items and tunnel-node `/health/details` capability output. Batch 15 adds `mhrv-f doctor --tunnel-node-url` / `doctor-fix --tunnel-node-url` live HTTP/HTTPS probing of `/health/details`, capability validation, CLI docs, and regression tests. |
+| G2.11 | Add LAN-sharing readiness rules for listen host, LAN token, allowlist, firewall, and exposure copy | in_progress | | Batch 12 adds `lan.exposure`, `lan.token`, and `lan.allowlist` readiness warnings plus Desktop repair routing and docs. Batch 18 adds Android `lan_token` / `lan_allowlist` config load/save/import/export, Advanced UI editing, Android LAN readiness rows, localized repair dialogs, and generated repair anchors pointing at the new Android fields. Firewall live checks remain. |
+| G2.12 | Ensure every readiness message has English/Persian Android copy and matching Desktop/docs wording | in_progress | | Batch 5 added localized Android blocker/warning text; Batch 6 centralized IDs; Batch 8 mirrors all current Rust IDs into Kotlin; Batch 10 adds repair dialog copy; Batch 12 adds CA repair copy; Batch 13 adds full-mode repair copy and keeps exact 186/186 EN/FA key parity. Batch 16 adds generated docs wording for ID/severity/repair matrix. Batch 17 adds generated Desktop/Android repair-anchor wording and keeps exact 187/187 EN/FA key parity. Batch 18 adds LAN repair/control copy and keeps exact 197/197 EN/FA key parity. Batch 19 adds Android YouTube relay copy and keeps exact 199/199 EN/FA key parity. Full generated localized message catalog parity remains. |
 
 Acceptance criteria:
 
@@ -1786,10 +1786,10 @@ Tasks:
 | H1.2 | Audit `assets/apps_script/CodeFull.gs` against full tunnel docs and UI copy | todo | | |
 | H1.3 | Audit `assets/apps_script/CodeCloudflareWorker.gs` against Cloudflare Worker relay docs | todo | | |
 | H1.4 | Verify auth header/key names match UI fields and docs examples | todo | | |
-| H1.5 | Verify request/response JSON shape is documented and covered by tests where possible | todo | | |
+| H1.5 | Verify request/response JSON shape is documented and covered by tests where possible | in_progress | | Batch 19 covers batch fallback behavior; Batch 20 adds compatibility metadata (`kind`, `version`, `protocol`, `features`) and `?compat=1` probe docs/tests for all Apps Script helpers. Deeper live relay-envelope tests remain. |
 | H1.6 | Add quota, blacklist, and account-group behavior to Setup/Help/docs in the same words | todo | | |
-| H1.7 | Add version marker or compatibility comment to helper scripts so support can identify stale deployments | todo | | |
-| H1.8 | Add release checklist entry to review Apps Script helper compatibility on every helper change | todo | | |
+| H1.7 | Add version marker or compatibility comment to helper scripts so support can identify stale deployments | review | | Batch 20 adds `HELPER_KIND`, `HELPER_VERSION`, `HELPER_PROTOCOL`, `HELPER_FEATURES`, and a non-secret `?compat=1` probe to `Code.gs`, `CodeFull.gs`, and `CodeCloudflareWorker.gs`, with source tests. |
+| H1.8 | Add release checklist entry to review Apps Script helper compatibility on every helper change | review | | Batch 19 adds source-level helper compatibility checks for batch fallback behavior. Batch 20 adds `docs/release-checklist.md`, helper compatibility probe docs, and CI execution for all Apps Script helper tests. |
 
 ### H2. Full Tunnel And Tunnel-Node Ops Parity
 
@@ -1966,11 +1966,11 @@ Tasks:
 | J2.3 | Add Android English/Persian string key parity script | todo | | |
 | J2.4 | Add Android hard-coded visible string scan with allowlist | todo | | |
 | J2.5 | Add SNI pool parity script | todo | | |
-| J2.6 | Add config example parse/validate/round-trip tests | todo | | |
+| J2.6 | Add config example parse/validate/round-trip tests | in_progress | | Batch 22 adds `bundled_example_configs_load_and_validate`, a Rust contract test that loads every root `config*.example.json` through `Config::from_json_str` and checks the expected mode. Round-trip assertions remain. |
 | J2.7 | Add status JSON snapshot/schema tests | todo | | |
-| J2.8 | Add backend helper contract tests for JSON response shape where practical | todo | | |
-| J2.9 | Add docs stale-name/stale-version/stale-screenshot-reference scans | todo | | |
-| J2.10 | Add markdown link check for README and core docs | todo | | |
+| J2.8 | Add backend helper contract tests for JSON response shape where practical | in_progress | | Batch 19 adds `assets/apps_script/tests/batch_fallback_test.js` to guard safe `fetchAll()` fallback behavior, original-index response mapping, bad-item handling, and unsafe-method replay refusal across all Apps Script helpers. Batch 20 adds `compat_marker_test.js` and CI runs every helper test. Deeper live/deployed relay-envelope tests remain. |
+| J2.9 | Add docs stale-name/stale-version/stale-screenshot-reference scans | in_progress | | Batch 21 adds `tools/check-repo-cleanliness.py` and a CI gate for stale-prone screenshot/image references, large source files, local secrets, and binary build artifacts. Stale version/name scans beyond the existing CI encoded marker scan remain. |
+| J2.10 | Add markdown link check for README and core docs | review | | Batch 23 adds `tools/check-doc-links.py`, CI execution, release-checklist wording, and local docs. It checks local Markdown links in README, docs, tool docs, Apps Script helper docs, tunnel-node docs, and release fallback docs. External URL and pure anchor validation remain out of scope. |
 
 ### J3. Android Quality Gates
 
@@ -1979,7 +1979,7 @@ Tasks:
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
 | J3.1 | Add `ConfigStore` JVM unit tests | todo | | |
-| J3.2 | Add Android readiness/localization helper unit tests | todo | | |
+| J3.2 | Add Android readiness/localization helper unit tests | in_progress | | Batch 6 added Android readiness ID constants; Batch 8 static check confirms every Rust ID is mirrored in Kotlin, with only `android.connection_mode` extra; Batch 10 static checks confirmed repair mappings and 172/172 string parity; Batch 11 adds a CI generator freshness gate; Batch 12 confirms 26 generated IDs/targets and 176/176 string parity; Batch 13-15 confirm 31 generated IDs/targets and 186/186 string parity; Batch 16 extends the generator gate to 31 readiness rules and generated matrix freshness; Batch 17 extends it to 31 repair anchors and confirms 187/187 string parity. Batch 18 confirms 31 IDs/targets/rules/anchors, static LAN readiness/control references, Kotlin brace balance, and 197/197 string parity. Batch 19 confirms Android `youtube_via_relay` config/UI/string references, Kotlin brace balance, and 199/199 string parity. Gradle-based Kotlin tests remain CI-only. |
 | J3.3 | Add Compose screenshot or preview review process for fresh, configured, running, error, and RTL states | todo | | |
 | J3.4 | Add `./gradlew assembleDebug` or equivalent Android build gate where CI capacity allows | todo | | |
 | J3.5 | Add permission/privacy review checklist for Android releases | todo | | |
@@ -1990,8 +1990,8 @@ Tasks:
 
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
-| J4.1 | Add a release checklist that covers Desktop, Android, CLI, helper scripts, tunnel-node, docs, and examples | todo | | |
-| J4.2 | Add version-bump checklist for Cargo, Android Gradle, README/docs, release notes, helper compatibility markers, and tunnel-node | todo | | |
+| J4.1 | Add a release checklist that covers Desktop, Android, CLI, helper scripts, tunnel-node, docs, and examples | review | | Batch 20 adds `docs/release-checklist.md` and links it from `docs/index.md`. |
+| J4.2 | Add version-bump checklist for Cargo, Android Gradle, README/docs, release notes, helper compatibility markers, and tunnel-node | in_progress | | Batch 20 adds helper compatibility marker review to the release checklist. Cargo/Android/tunnel-node version bump ownership remains. |
 | J4.3 | Add artifact checklist for binaries, Android APK/AAB, checksums, installer scripts, GHCR image, and docs archive if used | todo | | |
 | J4.4 | Add smoke-test matrix per mode before release | todo | | |
 | J4.5 | Add changelog template sections for UI changes, config/schema changes, backend-helper changes, docs changes, security/trust changes, and breaking changes | todo | | |
@@ -2035,11 +2035,11 @@ Tasks:
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
 | K2.1 | Inventory root-level files and classify them as source, example, docs, release, generated, local-only, or historical | todo | | |
-| K2.2 | Document artifact policy: CI/release workflow is source of truth; `dist/` / `releases/` may remain as backup/archive material only when clearly labeled | todo | | Maintainer decision D-11. |
-| K2.3 | Update `.gitignore` / artifact policy docs so build outputs and local secrets are handled consistently | todo | | |
+| K2.2 | Document artifact policy: CI/release workflow is source of truth; `dist/` / `releases/` may remain as backup/archive material only when clearly labeled | in_progress | | Maintainer decision D-11. Batch 20 adds release-checklist wording; Batch 21 adds tool/docs wording that reports `dist/` and `releases/` as allowed local backup/archive material while keeping CI release artifacts authoritative. More root archive labeling remains. |
+| K2.3 | Update `.gitignore` / artifact policy docs so build outputs and local secrets are handled consistently | review | | Batch 21 extends `.gitignore` for root/Android build outputs and package artifacts, documents the cleanliness check in `tools/README.md` and `docs/release-checklist.md`, and adds CI enforcement. |
 | K2.4 | Create a root `docs/README.md` or docs index that groups user docs, maintainer docs, backend helper docs, Android docs, and security docs | todo | | |
 | K2.5 | Move or clearly label historical files so current setup paths are not mixed with legacy artifacts | todo | | |
-| K2.6 | Add a repo cleanliness check that lists unexpected large/generated files before release | todo | | |
+| K2.6 | Add a repo cleanliness check that lists unexpected large/generated files before release | review | | Batch 21 adds `tools/check-repo-cleanliness.py`, CI execution, local docs, large-file/binary/local-secret/image-reference checks, and archive-folder notes for `dist/` / `releases/`. |
 
 Acceptance criteria:
 
@@ -2057,7 +2057,7 @@ Tasks:
 | K3.2 | Define Android package boundaries for config, native bridge, VPN/service, UI screens, UI components, localization, diagnostics, import/export, and tests | todo | | |
 | K3.3 | Add naming glossary for modes, backend helpers, config keys, user-facing labels, and legacy compatibility names | todo | | |
 | K3.4 | Add lint or static scans for stale product names where they are not compatibility references | todo | | |
-| K3.5 | Extract pure helper logic before UI widgets where possible, so tests can cover readiness, config mapping, and redaction without rendering UI | todo | | |
+| K3.5 | Extract pure helper logic before UI widgets where possible, so tests can cover readiness, config mapping, and redaction without rendering UI | in_progress | | Batch 6 extracted pure Rust readiness helpers and tests; Batch 7 added pure validation-message/repair helpers. More UI helper extraction remains. |
 | K3.6 | Define deprecation policy for legacy names such as `google_only`, `vercel_edge`, and `mhrv-rs://` | todo | | |
 
 Acceptance criteria:
@@ -2075,8 +2075,8 @@ Tasks:
 | K4.2 | Add `last reviewed` metadata to core docs and release-touching docs | todo | | |
 | K4.3 | Add docs style guide: tone, warning format, mode names, command snippets, Persian terminology, screenshots, and version references | todo | | |
 | K4.4 | Add docs update checklist to PR template and release checklist | todo | | |
-| K4.5 | Add automated scans for broken links, stale names, stale versions, missing Persian counterparts, and untested example configs | todo | | |
-| K4.6 | Add screenshot policy: when to include screenshots, where to store them, how to regenerate, and when to remove instead | todo | | |
+| K4.5 | Add automated scans for broken links, stale names, stale versions, missing Persian counterparts, and untested example configs | in_progress | | Existing CI scans JSON/XML/string references and encoded stale markers. Batch 21 adds stale-prone screenshot/image reference checks for maintained source docs. Batch 22 adds Rust validation for root example configs. Batch 23 adds local Markdown file/directory link validation. External link, anchor, stale version, and Persian doc counterpart gates remain. |
+| K4.6 | Add screenshot policy: when to include screenshots, where to store them, how to regenerate, and when to remove instead | in_progress | | Q3 decided to avoid stale screenshots in core docs. Batch 20 release checklist records screenshot review; Batch 21 enforces no source-doc screenshot/image references except the audit roadmap evidence file. A fuller screenshot regeneration policy remains. |
 
 Acceptance criteria:
 
@@ -2153,10 +2153,10 @@ Tasks:
 
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
-| L1.1 | Define a selected-mode dashboard contract for Apps Script, Serverless JSON, Direct, Full, and Android VPN/TUN | todo | | |
-| L1.2 | For each mode, list required setup, optional tuning, diagnostics, backend health, safety limits, and docs links | todo | | |
-| L1.3 | Add mode-specific "ready / degraded / blocked / running" summary text | todo | | |
-| L1.4 | Add mode-specific capability panels that hide unrelated controls but expose all relevant parameters for the selected mode | todo | | |
+| L1.1 | Define a selected-mode dashboard contract for Apps Script, Serverless JSON, Direct, Full, and Android VPN/TUN | in_progress | | Desktop contract implemented in Batch 4; Batch 5 added Android selected-mode readiness plus VPN/TUN/proxy-only connection-mode row; Batch 6 extracted the Rust readiness ID contract. Shared generated projection still pending. |
+| L1.2 | For each mode, list required setup, optional tuning, diagnostics, backend health, safety limits, and docs links | in_progress | | Batch 4 lists Desktop requirements, capabilities, and cautions per mode; Batch 5 mirrors Android required setup and preserved advanced-config warning. Diagnostics/docs links still pending. |
+| L1.3 | Add mode-specific "ready / degraded / blocked / running" summary text | review | | Batch 4 adds Desktop ready/missing requirement rows, running/stopped chip, and unsaved-edits chip. Batch 5 adds Android ready/blocked chip and blocker message. Batch 6 adds stable IDs to Desktop missing rows. |
+| L1.4 | Add mode-specific capability panels that hide unrelated controls but expose all relevant parameters for the selected mode | in_progress | | Batch 4 adds Desktop capability panel per selected mode; Batch 5 adds Android mode-specific readiness and exposes preserved advanced-group caveat. Deeper control hiding/progressive disclosure remains. |
 | L1.5 | Add mode-specific empty states for missing backend, missing CA, no traffic yet, quota unknown, and backend health unknown | todo | | |
 | L1.6 | Add mode-specific support bundle fields so support sees the selected mode's actual dependencies | todo | | |
 
@@ -2172,9 +2172,9 @@ Tasks:
 
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
-| L2.1 | Define one command state machine shared conceptually by Desktop and Android: save, save-and-start/connect, start/connect, stop/disconnect, test, doctor, install CA, copy endpoint | todo | | |
-| L2.2 | Add dirty-config detection and primary `Save and start` / `Save and connect` action | todo | | |
-| L2.3 | Define disabled action reasons with stable readiness IDs and one repair action | todo | | |
+| L2.1 | Define one command state machine shared conceptually by Desktop and Android: save, save-and-start/connect, start/connect, stop/disconnect, test, doctor, install CA, copy endpoint | in_progress | | Desktop header command model detects dirty state; Batch 5 aligns Android primary connect copy and blocked-state behavior. A shared generated command contract still pending. |
+| L2.2 | Add dirty-config detection and primary `Save and start` / `Save and connect` action | review | | Desktop valid dirty configs now show `Save and start`, save the current form, update the fingerprint, then start. Batch 5 adds Android `Save and connect` primary copy while preserving Android's current auto-save-on-edit model. |
+| L2.3 | Define disabled action reasons with stable readiness IDs and one repair action | in_progress | | Batch 5 adds Android disabled connect blocker IDs; Batch 6 adds Rust first-blocker helpers and Desktop missing-row IDs; Batch 7 adds repair metadata; Batch 8 extends repair targets to all current config validation IDs; Batch 9 adds Desktop repair buttons; Batch 10 adds Android repair dialogs; Batch 11 generates Android IDs/repair targets from Rust; Batch 17 generates repair anchors and shows section/field guidance in Desktop/Android. Batch 18 adds Android repair mappings for LAN exposure, token, and allowlist warnings. Actual focus/scroll-to-field actions remain. |
 | L2.4 | Standardize destructive/danger actions: stop, reset advanced, clear logs, revoke/import config, remove legacy artifacts | todo | | |
 | L2.5 | Add command-result toasts/cards that say what happened and what to do next | todo | | |
 
@@ -2692,8 +2692,8 @@ Use this table for newly discovered work.
 | BL.42 | Dependencies | Track temporary `tun2proxy` patch with owner, upstream condition, and removal criteria | high | todo | | `Cargo.toml` contains a temporary git patch. |
 | BL.43 | Repo | Add artifact inventory and cleanup policy for `target/`, `tunnel-node/target`, `dist/`, and `releases/` | high | todo | | Workspace generated outputs measured roughly 9.8 GB. |
 | BL.44 | Release | Define one changelog/release-notes source of truth and projections to GitHub/docs/Telegram | high | todo | | Release notes, release-drafter, workflows, and Telegram notifier can drift. |
-| BL.45 | UI/UX | Add selected-mode dashboards and mode-specific capability panels | high | todo | | Each mode should be rich in its own parameters/capabilities. |
-| BL.46 | UI/UX | Add shared command model with dirty `Save and start` / `Save and connect` state | high | todo | | Makes the primary action obvious and prevents unsaved-start confusion. |
+| BL.45 | UI/UX | Add selected-mode dashboards and mode-specific capability panels | high | in_progress | | Batch 4 implemented Desktop selected-mode readiness/capability panel; Batch 5 added Android selected-mode readiness and preserved advanced-config warning; Batch 6 added shared readiness IDs; Batch 12 adds non-blocking CA/LAN warning rows; Batch 13 adds full-mode external tunnel warning rows. Deep links and full generated rule matrix still pending. |
+| BL.46 | UI/UX | Add shared command model with dirty `Save and start` / `Save and connect` state | high | in_progress | | Batch 4 implemented Desktop dirty `Save and start`; Batch 5 added Android `Save and connect` copy and stable blocker IDs; Batch 6 added Rust first-blocker helpers and Kotlin ID constants; Batch 7 adds repair metadata; Batch 8 completes structured IDs; Batch 9 adds Desktop repair actions; Batch 10 adds Android repair dialogs; Batch 11 adds generated Android repair targets; Batch 12 separates CA/LAN warnings from blockers; Batch 13 keeps full-mode external checks non-blocking. Full generated command contract still pending. |
 | BL.47 | UI/UX | Add accessibility, RTL, contrast, touch-target, and keyboard QA matrix | medium | todo | | Elevates polish beyond layout cleanup. |
 | BL.48 | Installer | Review installer/launcher/OpenWRT/macOS package UX and bundled docs freshness | medium | todo | | Install experience is part of product UX. |
 
@@ -2726,6 +2726,27 @@ Add dated entries as work proceeds.
 | 2026-04-30 | Second-pass audit | Re-scanned artifacts, workflows, launchers, helper tools, Android resources, docs parity, release packages, and stale/deprecated markers; added P0.12-P0.16 and Workstream L | done | Second-Pass End-To-End Audit Addendum, Workstream L, BL.40-BL.48 |
 | 2026-04-30 | Batch 1 / Android config contract | Implemented canonical Android `account_groups` write/read/projection/preservation path and added focused JVM tests; local Gradle execution is intentionally pending because maintainer disallowed local Gradle download/install | review | `android/app/src/main/java/com/farnam/mhrvf/ConfigStore.kt`, `android/app/src/test/java/com/farnam/mhrvf/ConfigStoreTest.kt`, `android/app/build.gradle.kts`; static process check showed no Gradle/Java/Kotlin process left running |
 | 2026-04-30 | Batch 2 / Rust and Desktop config parity | Added Rust legacy Android config migration; preserved Desktop `domain_overrides`, top-level `enable_batching`, and `vercel.enable_batching`; added focused Rust/UI tests | review | `src/config.rs`, `src/bin/ui.rs`; `cargo test migrates_legacy_android_root_script_ids`; `cargo test canonical_account_groups_take_precedence_over_legacy_android_fields`; `cargo test --features ui --bin mhrv-f-ui config_wire_preserves_domain_overrides_and_batching_flags` |
+| 2026-04-30 | Batch 3 / Desktop ConfigWire parity guard | Added a broad all-current-field `ConfigWire` serialization guard so Desktop saves cannot silently drop existing `Config` fields | review | `src/bin/ui.rs`; `cargo test --features ui --bin mhrv-f-ui config_wire_serializes_all_current_config_fields_when_present`; no Gradle/Java/Kotlin process left running |
+| 2026-04-30 | Batch 4 / Desktop selected-mode command UX | Added Desktop selected-mode readiness/capability dashboard and dirty `Save and start` command flow | review | `src/bin/ui.rs`; `cargo check --features ui --bin mhrv-f-ui`; `cargo test --features ui --bin mhrv-f-ui config_wire_serializes_all_current_config_fields_when_present`; `cargo test --features ui --bin mhrv-f-ui config_wire_preserves_domain_overrides_and_batching_flags`; no Gradle/Java/Kotlin process left running |
+| 2026-04-30 | Batch 5 / Android command and readiness parity | Added Android selected-mode readiness card, stable connect blocker IDs, `Save and connect` primary copy, preserved advanced account-group warning, and full English/Persian string-key parity | review | `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`, `android/app/src/main/res/values/strings.xml`, `android/app/src/main/res/values-fa/strings.xml`; XML parse and locale key parity check passed with 153/153 strings; Kotlin static balance/import checks passed; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 6 / Shared readiness ID contract | Added Rust readiness contract, Desktop readiness ID rendering/tests, Android `ReadinessIds.kt`, and static Rust/Kotlin ID parity checks | review | `src/readiness.rs`, `src/lib.rs`, `src/bin/ui.rs`, `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`, `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`; `cargo test readiness::tests::apps_script_readiness_uses_stable_ids`; `cargo test readiness::tests::serverless_readiness_reports_first_blocker_id`; `cargo test readiness::tests::direct_readiness_allows_auto_defaults_but_rejects_ip_sni`; `cargo test --features ui --bin mhrv-f-ui desktop_dashboard_uses_shared_readiness_ids`; `cargo test --features ui --bin mhrv-f-ui desktop_direct_dashboard_matches_auto_default_readiness`; `cargo check --features ui --bin mhrv-f-ui`; shared Rust/Kotlin ID static check passed; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 7 / Structured validation repair bridge | Bridged high-impact `Config::validate()` blockers to readiness IDs, added repair labels/targets, and expanded validation/readiness tests | review | `src/readiness.rs`, `src/config.rs`, `elevation_audit_roadmap_source.md`; `cargo test readiness::tests::readiness_blockers_include_repair_metadata`; `cargo test validation_uses_readiness_id_for_serverless_auth`; `cargo test validation_uses_readiness_id_for_direct_bad_ip`; `cargo test apps_script_requires_account_groups`; `cargo test parses_vercel_edge_mode`; `cargo test parses_direct_without_script_id`; `cargo check --features ui --bin mhrv-f-ui`; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 8 / Deep validation structured IDs | Converted remaining current `Config::validate()` invalid branches to readiness IDs, added repair targets, mirrored IDs to Kotlin, and added deep validation tests | review | `src/readiness.rs`, `src/config.rs`, `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`, `elevation_audit_roadmap_source.md`; `cargo test rejects_zero_scan_batch_size`; `cargo test rejects_same_http_and_socks5_port`; `cargo test validation_uses_structured_ids_for_remaining_deep_checks`; `cargo test rejects_wrong_mode`; `cargo test fronting_group_rejects_invalid_sni_at_validate`; `cargo test validation_uses_readiness_id_for_serverless_auth`; `cargo test validation_uses_readiness_id_for_direct_bad_ip`; `cargo test readiness::tests::readiness_blockers_include_repair_metadata`; `cargo check --features ui --bin mhrv-f-ui`; static Rust/Kotlin ID parity check passed with only Android platform-only `android.connection_mode` extra; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 9 / Desktop readiness repair actions | Added target-aware Desktop repair buttons for missing readiness rows and route tests for Setup/Network/Advanced repair targets | review | `src/readiness.rs`, `src/bin/ui.rs`, `elevation_audit_roadmap_source.md`; `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`; `cargo test --features ui --bin mhrv-f-ui desktop_dashboard_uses_shared_readiness_ids`; `cargo test --features ui --bin mhrv-f-ui desktop_direct_dashboard_matches_auto_default_readiness`; `cargo check --features ui --bin mhrv-f-ui`; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 10 / Android readiness repair dialogs | Added Android repair metadata, `Fix` actions, and localized repair dialogs for blocking selected-mode readiness rows | review | `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`, `android/app/src/main/res/values/strings.xml`, `android/app/src/main/res/values-fa/strings.xml`, `elevation_audit_roadmap_source.md`; static Kotlin surface checks confirmed repair actions/dialog symbols; blocking Android readiness IDs all map to repair actions except non-blocking `android.connection_mode`; XML string-key parity passed with 172/172 strings; Kotlin brace balance passed; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 11 / Generated readiness contract | Added a Rust-to-Android readiness contract generator, generated Android repair targets, CI freshness guard, and maintainer tooling docs | review | `tools/generate-readiness-contract.ps1`, `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`, `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`, `.github/workflows/ci.yml`, `tools/README.md`, `elevation_audit_roadmap_source.md`; `powershell -NoProfile -ExecutionPolicy Bypass -File tools/generate-readiness-contract.ps1 -Check`; `cargo test readiness::tests::readiness_blockers_include_repair_metadata`; `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`; XML string-key parity passed with 172/172 strings; Kotlin brace balance passed; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 12 / CA and LAN readiness warnings | Added non-blocking CA trust and LAN exposure readiness warnings across Rust, Desktop, Android, generated Kotlin contract, and docs | review | `src/readiness.rs`, `src/bin/ui.rs`, `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`, `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`, `android/app/src/main/res/values/strings.xml`, `android/app/src/main/res/values-fa/strings.xml`, `docs/safety-security.md`, `docs/sharing-and-per-app-routing.md`, `elevation_audit_roadmap_source.md`; `cargo test readiness::tests::readiness_adds_ca_warning_for_local_mitm_modes_only`; `cargo test readiness::tests::readiness_reports_lan_exposure_controls_without_blocking_start`; `cargo test --features ui --bin mhrv-f-ui desktop_dashboard_uses_shared_readiness_ids`; `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`; `cargo check --features ui --bin mhrv-f-ui`; generator check passed with 26 IDs/targets; XML string-key parity passed with 176/176 strings; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 13 / Full-mode tunnel readiness | Added non-blocking full-mode checks for CodeFull deployment, tunnel-node URL/auth, UDP/SOCKS expectations, and tunnel health across Rust, Desktop, Android, generated Kotlin contract, and docs | review | `src/readiness.rs`, `src/bin/ui.rs`, `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`, `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`, `android/app/src/main/res/values/strings.xml`, `android/app/src/main/res/values-fa/strings.xml`, `docs/relay-modes.md`, `docs/android.md`, `tunnel-node/README.md`, `elevation_audit_roadmap_source.md`; `cargo test readiness::tests::readiness_adds_full_mode_external_tunnel_checks`; `cargo test readiness::tests::readiness_reports_lan_exposure_controls_without_blocking_start`; `cargo test --features ui --bin mhrv-f-ui desktop_dashboard_uses_shared_readiness_ids`; `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`; `cargo check --features ui --bin mhrv-f-ui`; generator check passed with 31 IDs/targets; XML string-key parity passed with 186/186 strings; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 14 / Full-mode Doctor and tunnel-node health details | Added structured full-mode Doctor checks matching readiness IDs and tunnel-node `/health/details` JSON capabilities for future remote probes | review | `src/doctor.rs`, `tunnel-node/src/main.rs`, `tunnel-node/README.md`, `docs/relay-modes.md`, `elevation_audit_roadmap_source.md`; `cargo test doctor::tests::doctor_reports_structured_full_mode_external_checks`; `cargo test doctor::tests::doctor_warns_when_full_mode_udp_has_no_socks5_listener`; `cargo test health_details_advertises_full_tunnel_capabilities` in `tunnel-node`; `cargo check --features ui --bin mhrv-f-ui`; `cargo check` in `tunnel-node`; generator check passed with 31 IDs/targets; XML string-key parity passed with 186/186 strings; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 15 / Full-mode Doctor live tunnel-node probe | Added explicit `--tunnel-node-url` support for `doctor` and `doctor-fix`, native HTTP/HTTPS `/health/details` probing, capability validation, and docs/bookkeeping updates | review | `src/doctor.rs`, `src/main.rs`, `docs/doctor.md`, `docs/relay-modes.md`, `tunnel-node/README.md`, `README.md`, `elevation_audit_roadmap_source.md`; `cargo fmt`; `cargo test doctor::tests`; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; generator check passed with 31 IDs/targets; XML string-key parity passed with 186/186 strings; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 16 / Generated readiness rule matrix | Added a Rust readiness rule catalog, generated `docs/readiness-matrix.md`, extended generator/CI freshness checks, and fixed stale readiness test expectations | review | `src/readiness.rs`, `tools/generate-readiness-contract.ps1`, `docs/readiness-matrix.md`, `.github/workflows/ci.yml`, `docs/index.md`, `docs/doctor.md`, `README.md`, `elevation_audit_roadmap_source.md`; `cargo fmt`; `cargo test readiness::tests`; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; `cargo fmt --check`; generator check passed with 31 IDs/targets/rules; XML string-key parity passed with 186/186 strings; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 17 / Generated repair anchors | Added Rust repair-anchor catalog, generated Kotlin repair anchors and matrix anchor columns, surfaced exact repair locations in Desktop tooltips and Android dialogs | review | `src/readiness.rs`, `tools/generate-readiness-contract.ps1`, `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`, `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`, `android/app/src/main/res/values/strings.xml`, `android/app/src/main/res/values-fa/strings.xml`, `docs/readiness-matrix.md`, `src/bin/ui.rs`, `elevation_audit_roadmap_source.md`; `cargo fmt`; `cargo test readiness::tests::readiness_rule_catalog_is_complete_and_matches_repairs`; `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`; generator check passed with 31 IDs/targets/rules/anchors; XML string-key parity passed with 187/187 strings; Kotlin brace-balance passed; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; `cargo fmt --check`; no Gradle/Java/Kotlin process left running |
+| 2026-05-01 | Batch 18 / Android LAN access-control editing | Added Android LAN token/allowlist config parity, Advanced UI controls, LAN readiness warnings, localized repair dialogs, generated anchor updates, and LAN config-share preservation | review | `android/app/src/main/java/com/farnam/mhrvf/ConfigStore.kt`, `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`, `android/app/src/main/res/values/strings.xml`, `android/app/src/main/res/values-fa/strings.xml`, `src/readiness.rs`, `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`, `docs/readiness-matrix.md`, `elevation_audit_roadmap_source.md`; `cargo fmt`; `cargo test readiness::tests::readiness_rule_catalog_is_complete_and_matches_repairs`; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; `cargo fmt --check`; generator check passed with 31 IDs/targets/rules/anchors; XML string-key parity passed with 197/197 strings; Kotlin static brace-balance passed; no Gradle/Java/Kotlin process left running |
+| 2026-05-02 | Batch 19 / Upstream candidate port audit and Apps Script fallback hardening | Audited donor commits, ported Android `youtube_via_relay` parity, hardened all Apps Script batch helpers with safe `fetchAll()` fallback, and documented deferred donor candidates | review | `android/app/src/main/java/com/farnam/mhrvf/ConfigStore.kt`, `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`, `android/app/src/main/res/values/strings.xml`, `android/app/src/main/res/values-fa/strings.xml`, `assets/apps_script/Code.gs`, `assets/apps_script/CodeFull.gs`, `assets/apps_script/CodeCloudflareWorker.gs`, `assets/apps_script/tests/batch_fallback_test.js`, `elevation_audit_roadmap_source.md`; `node assets\apps_script\tests\batch_fallback_test.js`; `node assets\apps_script\tests\edge_dns_test.js`; Apps Script syntax checked through `node --check` via stdin; XML string-key parity passed with 199/199 strings; Kotlin static brace-balance passed; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; `cargo fmt --check`; no Gradle/Java/Kotlin process left running |
+| 2026-05-02 | Batch 20 / Apps Script compatibility probes and release checklist | Added non-secret helper compatibility metadata/probes, CI coverage for all helper tests, and release checklist docs for helper/backend parity | review | `assets/apps_script/Code.gs`, `assets/apps_script/CodeFull.gs`, `assets/apps_script/CodeCloudflareWorker.gs`, `assets/apps_script/tests/compat_marker_test.js`, `assets/apps_script/README.md`, `docs/cloudflare-worker-json-relay.md`, `docs/cfw-reference-audit.md`, `docs/release-checklist.md`, `docs/index.md`, `README.md`, `.github/workflows/ci.yml`, `elevation_audit_roadmap_source.md`; `node assets\apps_script\tests\compat_marker_test.js`; `node assets\apps_script\tests\batch_fallback_test.js`; `node assets\apps_script\tests\edge_dns_test.js`; Apps Script and helper tests syntax checked through `node --check` via stdin; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; `cargo fmt --check`; no Gradle/Java/Kotlin process left running |
+| 2026-05-02 | Batch 21 / Repository cleanliness gate | Added a CI-backed repository hygiene script for source artifacts, local secrets, large files, stale-prone image references, and documented archive/build-output policy | review | `tools/check-repo-cleanliness.py`, `.github/workflows/ci.yml`, `.gitignore`, `tools/README.md`, `docs/release-checklist.md`, `elevation_audit_roadmap_source.md`; `python tools\check-repo-cleanliness.py`; `python -m py_compile tools\check-repo-cleanliness.py`; all Apps Script helper tests; Apps Script syntax check via stdin; `cargo fmt --check`; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; no Gradle/Java/Kotlin process left running |
+| 2026-05-02 | Batch 22 / Example config contract validation | Added a Rust config contract test that loads and validates every root example config through the real config loader and documented the release/test command | review | `src/config.rs`, `tools/README.md`, `docs/release-checklist.md`, `elevation_audit_roadmap_source.md`; `cargo test bundled_example_configs_load_and_validate`; `python tools\check-repo-cleanliness.py`; `python -m py_compile tools\check-repo-cleanliness.py`; all Apps Script helper tests; `cargo fmt --check`; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; no Gradle/Java/Kotlin process left running |
+| 2026-05-02 | Batch 23 / Markdown local link gate | Added a CI-backed local Markdown link checker for maintained docs and documented the release/local command | review | `tools/check-doc-links.py`, `.github/workflows/ci.yml`, `tools/README.md`, `docs/release-checklist.md`, `elevation_audit_roadmap_source.md`; `python tools\check-doc-links.py`; `python -m py_compile tools\check-doc-links.py`; `python tools\check-repo-cleanliness.py`; all Apps Script helper tests; `cargo test bundled_example_configs_load_and_validate`; `cargo fmt --check`; `cargo check --bin mhrv-f`; `cargo check --features ui --bin mhrv-f-ui`; no Gradle/Java/Kotlin process left running |
 
 ## Batch Implementation Log
 
@@ -2825,10 +2846,1556 @@ Garbage collection:
 
 Remaining after Batch 2:
 
-- Add a generated/current-field Desktop `Config` vs `ConfigWire` parity test so future fields cannot silently drop.
+- Add a generated/current-field Desktop `Config` vs `ConfigWire` parity test so future fields cannot silently drop. Broad all-current-field guard completed in Batch 3.
 - Run Android `ConfigStoreTest` only in CI or an approved environment with Gradle already available.
 - Add Android warnings for advanced preserved-but-not-editable account groups.
 - Start the next UI/UX batch: mode-specific dashboards and primary dirty-state actions.
+
+### BATCH-3 - Desktop ConfigWire parity guard
+
+Status: review; Rust/UI verification passed locally.
+
+Progress estimate: Batch 3 is complete for the Desktop config-save guard. Overall elevation program progress is about 7% after Batches 1-3.
+
+Scope:
+
+- Turn the focused Desktop wire regression from Batch 2 into a broader guard that covers every current top-level `Config` field when present.
+- Keep the test readable and failure-friendly by reporting the exact field names missing from `ConfigWire`.
+- Avoid changing runtime behavior beyond test coverage.
+- Do a cleanup pass around the newly added test location and misleading comment placement.
+
+Changed files:
+
+- `src/bin/ui.rs`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `config_wire_serializes_all_current_config_fields_when_present`.
+- The test builds a complete valid config containing every current top-level field: runtime mode, listeners, hosts, batching flags, rate limits, runtime tuning, SNI, scan settings, domain/fronting groups, account groups, serverless relay settings, LAN guardrails, and outage reset tuning.
+- The test serializes through `ConfigWire::from(&cfg)` and asserts the output object contains every expected field.
+- The test also checks representative nested values for `account_groups`, `vercel`, `fronting_groups`, and `domain_overrides`.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test --features ui --bin mhrv-f-ui config_wire_serializes_all_current_config_fields_when_present`
+- `cargo test --features ui --bin mhrv-f-ui config_wire_preserves_domain_overrides_and_batching_flags`
+- `cargo test migrates_legacy_android_root_script_ids`
+- `cargo test canonical_account_groups_take_precedence_over_legacy_android_fields`
+
+Tooling note:
+
+- One attempted Cargo command used two test filters in one invocation and failed with Cargo usage help; both tests were rerun separately and passed.
+
+Garbage collection:
+
+- No stale production code was added.
+- The Desktop wire guard now fails loudly on missing current fields instead of relying on ad hoc visual inspection.
+- No local Gradle download/install was performed.
+
+Remaining after Batch 3:
+
+- Run Android `ConfigStoreTest` only in CI or an approved environment with Gradle already available.
+- Add Android warnings for advanced preserved-but-not-editable account groups.
+- Add CI/repo governance so this parity coverage becomes part of the normal source-of-truth workflow.
+- Start UI/UX Batch 4: selected-mode dashboards and richer mode-specific capability panels. Completed for Desktop in Batch 4.
+
+### BATCH-4 - Desktop selected-mode command UX
+
+Status: review; Rust/UI verification passed locally.
+
+Progress estimate: Batch 4 advances the elevation program by about 5%. Overall program progress is about 12% after Batches 1-4.
+
+Scope:
+
+- Add a richer Desktop selected-mode dashboard for Apps Script, Serverless JSON, Direct, and Full.
+- Show mode-specific readiness requirements instead of generic mode prose only.
+- Show mode-specific capabilities and cautions so each mode feels complete in its own right.
+- Add Desktop dirty-config detection based on the same `ConfigWire` projection used for saving.
+- Change the main primary action to `Save and start` when the current valid form differs from the last saved config.
+- Keep explicit `Save config`, `Start`, `Stop`, `Test relay`, `Doctor`, and walkthrough actions available.
+- Do a cleanup pass for warning-free compilation and no stale command behavior in the header.
+
+Changed files:
+
+- `src/bin/ui.rs`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `ModeDashboard` and `ModeReadinessItem` helpers.
+- Added `mode_dashboard()` to compute selected-mode chips, capabilities, requirements, and cautions from live `FormState`.
+- Added `mode_dashboard_panel()` to render readiness and capability columns inside the Setup mode section.
+- Apps Script now shows enabled groups, deployment IDs, group auth coverage, local listener, CA/quota cautions, and account-group capability context.
+- Serverless JSON now shows relay origin, relay path, auth key, local listener, JSON batch capability, CA requirement, and platform-protection caution.
+- Direct now shows Google edge IP, front SNI, local listener, no-relay capability, bootstrap use, and limited-coverage caution.
+- Full now shows enabled groups, deployment IDs, group auth coverage, local listener, tunnel-node/no-CA capability, and remote-health cautions.
+- Added `ConfigWire`-based `config_fingerprint()` and `form_fingerprint()` helpers.
+- Added `last_saved_fingerprint` to the Desktop app state.
+- Added `save_current_config()` and `start_current_config(save_first)` command helpers.
+- Header primary action now becomes `Save and start` for valid unsaved edits, writes the current form, updates the fingerprint, then starts the proxy.
+- Header status chips now include `unsaved edits` when the form differs from the last saved config.
+- Bottom save button now uses the same save helper and updates the dirty-state fingerprint.
+
+Verification:
+
+- `cargo fmt`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui config_wire_serializes_all_current_config_fields_when_present`
+- `cargo test --features ui --bin mhrv-f-ui config_wire_preserves_domain_overrides_and_batching_flags`
+
+Garbage collection:
+
+- Removed the compile warning introduced during dashboard development.
+- Reused the existing `ConfigWire` save projection for dirty detection instead of creating a second comparison schema.
+- No local Gradle download/install was performed.
+
+Remaining after Batch 4:
+
+- Mirror the command model on Android as dirty `Save and connect`.
+- Add shared readiness IDs so Desktop/Android disabled-action reasons are contract-tested instead of locally computed prose.
+- Add mode-specific docs/deep-link buttons inside the dashboard.
+- Add mode-specific diagnostics/result cards so Doctor does not remain log-first.
+- Stress-test the new panel at narrow Desktop widths and with long IDs/URLs/Persian copy.
+
+### BATCH-5 - Android command/readiness parity
+
+Status: review; static Android verification passed locally without running Gradle.
+
+Progress estimate: Batch 5 advances the elevation program by about 5%. Overall program progress is about 17% after Batches 1-5.
+
+Scope:
+
+- Mirror the Desktop selected-mode readiness idea on Android without making the mobile editor overly complex.
+- Keep Android as a simple first-group editor while preserving advanced imported Desktop account groups.
+- Make the Android primary command say what it does: save current settings and connect.
+- Explain disabled connect states with stable IDs instead of vague invalid-config feedback.
+- Close Android English/Persian string-resource parity as part of the cleanup pass.
+- Respect the maintainer instruction not to download/install Gradle locally.
+
+Changed files:
+
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `android/app/src/main/res/values/strings.xml`
+- `android/app/src/main/res/values-fa/strings.xml`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `AndroidReadinessItem` and `androidReadinessItems()` for mode-specific readiness rows.
+- Added stable Android blocker IDs for `account_groups.script_ids`, `account_groups.auth_key`, `vercel.base_url`, `vercel.relay_path`, `vercel.auth_key`, `direct.google_ip`, `direct.front_domain`, and `android.connection_mode`.
+- Added `androidConnectBlockerId()` so the primary connect action can expose the first concrete blocker.
+- Added `ModeReadinessCard()` below the mode overview card.
+- Apps Script and Full now require at least one deployment ID and an auth key.
+- Serverless JSON now requires base URL, relay path, and auth key.
+- Direct mode accepts blank `google_ip` and `front_domain` because the existing connect flow can auto-detect/default them, but rejects malformed entered values.
+- Connection mode now shows whether Android will route via VPN/TUN or proxy-only setup.
+- The primary Android button now uses `Save and connect` while disconnected.
+- Blocked Android connects now show `Connect blocked by <stable-id>`.
+- Imported advanced Desktop account groups now show a preservation warning instead of silently looking fully editable.
+- Added English and Persian strings for the new command/blocker/warning text.
+- Filled 12 pre-existing missing Persian resource keys for Serverless JSON and guide parity.
+
+Verification:
+
+- Parsed `values/strings.xml` and `values-fa/strings.xml` as XML.
+- Compared English and Persian string keys: 153 English keys and 153 Persian keys, with zero missing/extra keys.
+- Checked Kotlin imports/symbol surface for `AssistChip`, `HorizontalDivider`, `CheckCircle`, `ErrorOutline`, and `parseAsIpOrNull`.
+- Checked simple Kotlin bracket balance for `{}`, `()`, and `[]`.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Removed the older locale drift discovered by the parity scan.
+- Kept Android Direct-mode validation aligned with existing auto-fill behavior instead of introducing stale stricter launch rules.
+- Did not add a second Android config schema or destructive multi-group simplification.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 5:
+
+- Extract/generate shared readiness and command IDs so Rust, Desktop, and Android cannot drift.
+- Add repair actions/deep links next to each blocker ID.
+- Add Desktop and Android mode-specific diagnostics/result cards backed by structured Doctor/status output.
+- Add Android UI tests or JVM/Compose tests in CI for readiness blocker scenarios.
+- Decide whether Android should later grow an optional advanced full multi-group editor, while keeping the current preservation-first behavior stable.
+
+### BATCH-6 - Shared readiness ID contract
+
+Status: review; Rust/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 6 advances the elevation program by about 5%. Overall program progress is about 22% after Batches 1-6.
+
+Scope:
+
+- Turn readiness IDs from local UI strings into a repo-level contract.
+- Add a Rust readiness module that can become the source of truth for mode-specific blocker IDs.
+- Make Desktop readiness rows carry and render stable IDs for missing requirements.
+- Keep Android aligned to the same cross-platform ID names without running Gradle locally.
+- Add focused tests around the contract so future UI work has a firmer floor.
+- Avoid stale duplicate strings by centralizing Android readiness IDs in one Kotlin object.
+
+Changed files:
+
+- `src/readiness.rs`
+- `src/lib.rs`
+- `src/bin/ui.rs`
+- `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `src/readiness.rs` and exported it from `src/lib.rs`.
+- Defined stable Rust readiness IDs: `account_groups.enabled`, `account_groups.script_ids`, `account_groups.auth_key`, `vercel.base_url`, `vercel.relay_path`, `vercel.auth_key`, `vercel.max_body_bytes`, `direct.google_ip`, `direct.front_domain`, and `local.listener`.
+- Added `ReadinessSeverity` with `Blocker`, `Warning`, and `Hint`.
+- Added `ReadinessItem`, `blocks_start()`, `first_blocker_id()`, and `mode_readiness(&Config)`.
+- Apps Script and Full readiness now report enabled groups, deployment IDs, group auth coverage, and local listener through stable Rust IDs.
+- Serverless JSON readiness now reports relay origin, relay path, auth key, max body, and local listener through stable Rust IDs.
+- Direct readiness now allows blank `google_ip`/`front_domain` because runtime defaults can fill them, while still blocking malformed entered values.
+- Desktop `ModeReadinessItem` now carries `ReadinessId`.
+- Desktop missing rows now render the stable ID in monospace so the user/support path can name the exact blocker.
+- Desktop Direct dashboard now matches Android's blank-is-auto-default behavior.
+- Added `ReadinessIds.kt` for Android constants and replaced inline Android blocker strings with constants.
+- Statically compared the nine shared Rust/Kotlin readiness IDs and confirmed parity. The remaining one-sided IDs are intentional: Rust/Desktop `local.listener` and Android `android.connection_mode`.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test readiness::tests::apps_script_readiness_uses_stable_ids`
+- `cargo test readiness::tests::serverless_readiness_reports_first_blocker_id`
+- `cargo test readiness::tests::direct_readiness_allows_auto_defaults_but_rejects_ip_sni`
+- `cargo test --features ui --bin mhrv-f-ui desktop_dashboard_uses_shared_readiness_ids`
+- `cargo test --features ui --bin mhrv-f-ui desktop_direct_dashboard_matches_auto_default_readiness`
+- `cargo check --features ui --bin mhrv-f-ui`
+- Static Rust/Kotlin shared ID parity check: nine shared IDs present in both Rust and Kotlin.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Removed inline Android readiness ID literals from `HomeScreen.kt`.
+- Avoided creating a second Desktop validation schema; Desktop now references the Rust readiness ID constants.
+- Kept platform-only IDs explicit instead of pretending all readiness dimensions apply everywhere.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 6:
+
+- Bridge `Config::validate()` errors to readiness IDs or make validation return structured readiness failures directly.
+- Generate Kotlin readiness IDs from Rust/source data instead of maintaining a mirrored constants file by hand.
+- Add repair actions/deep links for each blocker ID.
+- Add full-mode tunnel-node health/auth readiness and LAN-sharing exposure readiness.
+- Add Android readiness tests in CI/preinstalled Gradle and extend fixtures to Full and legacy `google_only`.
+
+### BATCH-7 - Structured validation repair bridge
+
+Status: review; Rust/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 7 advances the elevation program by about 5%. Overall program progress is about 27% after Batches 1-7.
+
+Scope:
+
+- Connect high-impact `Config::validate()` failures to the readiness contract.
+- Add repair labels and repair targets to readiness blockers.
+- Preserve legacy deep validation for lower-level config fields while making Start/Connect blockers structured first.
+- Ensure validation errors now include stable IDs and next-step repair metadata for logs, support, Desktop, and future Android/Doctor projections.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/readiness.rs`
+- `src/config.rs`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `ReadinessRepair { label, target }`.
+- Added `repair_for(id)` mapping for Apps Script groups, deployment IDs, auth keys, Serverless URL/path/auth/max body, Direct IP/SNI, and local listener.
+- Added `validation_message(item)` so structured blockers render as `id: detail Next: label [target].`
+- Added `first_blocker(&[ReadinessItem])` for callers that need the full blocker, not only the ID.
+- `ReadinessItem::blocker()` now attaches repair metadata automatically.
+- `Config::validate()` now runs `mode_readiness(self)` after mode parsing and before the legacy detailed validation branches.
+- The first readiness blocker now becomes the `ConfigError::Invalid` message with stable ID and repair target.
+- Existing deeper validation remains in place for scan batch size, duplicate HTTP/SOCKS ports, domain overrides, fronting groups, and other non-mode-start checks.
+- Direct malformed entered IP/SNI now becomes a structured validation blocker, while blank Direct values remain valid because runtime defaults/auto-detect can fill them.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test readiness::tests::readiness_blockers_include_repair_metadata`
+- `cargo test validation_uses_readiness_id_for_serverless_auth`
+- `cargo test validation_uses_readiness_id_for_direct_bad_ip`
+- `cargo test readiness::tests::direct_readiness_allows_auto_defaults_but_rejects_ip_sni`
+- `cargo test apps_script_requires_account_groups`
+- `cargo test parses_vercel_edge_mode`
+- `cargo test parses_direct_without_script_id`
+- `cargo check --features ui --bin mhrv-f-ui`
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Reused the existing readiness module instead of creating a parallel validation taxonomy.
+- Kept the bridge narrow and test-backed: mode/start blockers are structured now; unrelated validation remains unchanged.
+- Removed no supported compatibility surfaces.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 7:
+
+- Convert remaining deep validation failures to structured IDs: scan batch, port collisions, rate-limit invalid values, domain overrides, and fronting groups.
+- Surface repair targets as actual UI repair/deep-link buttons rather than validation text only.
+- Generate Kotlin readiness IDs and repair metadata from a shared source.
+- Add full-mode tunnel-node health/auth readiness and LAN-sharing exposure readiness.
+- Add Android/CI readiness tests once Gradle is available in CI or a preinstalled environment.
+
+### BATCH-8 - Deep validation structured IDs
+
+Status: review; Rust/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 8 advances the elevation program by about 5%. Overall program progress is about 32% after Batches 1-8.
+
+Scope:
+
+- Finish converting current `Config::validate()` invalid branches away from free-form-only messages.
+- Add stable IDs and repair targets for deeper config failures beyond first-run mode readiness.
+- Mirror the expanded Rust ID list into Android constants without running Gradle locally.
+- Remove redundant legacy mode-specific validation branches now owned by readiness.
+- Keep unsupported or platform-only IDs explicit instead of hiding drift.
+
+Changed files:
+
+- `src/readiness.rs`
+- `src/config.rs`
+- `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added structured IDs for `config.version`, `config.mode`, `local.ports`, `scan.batch_size`, `relay.rate_limit_qps`, `domain_overrides.host`, `domain_overrides.force_route`, `fronting_groups.name`, `fronting_groups.ip`, `fronting_groups.sni`, and `fronting_groups.domains`.
+- Added repair metadata for every new ID.
+- Added `validation_failure(id, label, detail)` helper so non-dashboard validation errors still use the same structured format as readiness blockers.
+- Converted `config_version` validation to `config.version`.
+- Converted unknown mode validation to `config.mode`.
+- Converted scan batch size, duplicate HTTP/SOCKS port, relay QPS, domain override host/route, and all fronting-group validation errors to structured readiness IDs.
+- Removed the redundant legacy Apps Script/Full and Serverless validation branch checks that were already fully covered by `mode_readiness(self)`.
+- Expanded `ReadinessIds.kt` so Android mirrors all Rust readiness/validation IDs.
+- Added tests asserting the structured IDs and repair targets for scan batch, duplicate ports, relay QPS, domain override host/route, fronting group IP/domains, unknown mode, and invalid fronting SNI.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test rejects_zero_scan_batch_size`
+- `cargo test rejects_same_http_and_socks5_port`
+- `cargo test validation_uses_structured_ids_for_remaining_deep_checks`
+- `cargo test rejects_wrong_mode`
+- `cargo test fronting_group_rejects_invalid_sni_at_validate`
+- `cargo test validation_uses_readiness_id_for_serverless_auth`
+- `cargo test validation_uses_readiness_id_for_direct_bad_ip`
+- `cargo test readiness::tests::readiness_blockers_include_repair_metadata`
+- `cargo check --features ui --bin mhrv-f-ui`
+- Static Rust/Kotlin readiness ID parity check: every Rust ID exists in Kotlin; Kotlin has one intentional platform-only extra, `android.connection_mode`.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Removed duplicated mode-specific validation checks from `Config::validate()` after readiness took ownership of those blockers.
+- Reused `validation_failure()` for deeper validation instead of creating another formatter.
+- Kept Android constants centralized in `ReadinessIds.kt`.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 8:
+
+- Turn repair targets into real Desktop/Android UI repair buttons or deep-link actions.
+- Generate Kotlin IDs and repair metadata from a shared source instead of manual mirroring.
+- Add LAN exposure readiness (`lan_token`, `lan_allowlist`, SOCKS5 LAN caveat) and CA trust readiness.
+- Add full-mode tunnel-node URL/auth/version/health readiness.
+- Add Android/CI readiness tests once Gradle is available in CI or a preinstalled environment.
+
+### BATCH-9 - Desktop readiness repair actions
+
+Status: review; Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 9 advances the elevation program by about 5%. Overall program progress is about 37% after Batches 1-9.
+
+Scope:
+
+- Make readiness repair metadata visible and actionable in the Desktop setup dashboard.
+- Map readiness repair targets to the right Desktop tab instead of only showing IDs.
+- Keep the implementation lightweight and non-destructive: repair buttons navigate users to the relevant area, they do not mutate config automatically.
+- Add tests so target-to-tab routing stays stable as more repair targets are added.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/readiness.rs`
+- `src/bin/ui.rs`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Exposed `readiness::repair_for_id(id)` for UI consumers.
+- Added `DesktopRepairAction` with repair label, target, destination tab, and hover hint.
+- Added `repair_tab_for_target()` to route targets:
+  - `setup.account_groups.*` and `advanced.*` to `Advanced`.
+  - `setup.direct.*` and `setup.local_listener.*` to `Network`.
+  - other setup targets, including mode and Serverless JSON fields, to `Setup`.
+- Added `repair_hint_for_tab()` so the repair button tells users where it will jump.
+- Added `desktop_repair_action()` that turns a missing readiness row into a repair action using the shared readiness repair metadata.
+- Updated the selected-mode readiness panel to show a small `repair` button beside missing rows.
+- Clicking `repair` changes the active Desktop tab to the target area.
+- Added focused tests for account-group, serverless base URL, and direct-IP repair routing.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`
+- `cargo test --features ui --bin mhrv-f-ui desktop_dashboard_uses_shared_readiness_ids`
+- `cargo test --features ui --bin mhrv-f-ui desktop_direct_dashboard_matches_auto_default_readiness`
+- `cargo check --features ui --bin mhrv-f-ui`
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Reused readiness repair metadata instead of adding Desktop-only repair text.
+- Kept repair actions as navigation only, avoiding hidden config mutations.
+- Added route tests so future targets do not silently land on the wrong tab.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 9:
+
+- Add Android repair actions/sheets for blocker IDs.
+- Generate Rust/Kotlin IDs and repair metadata from a shared source.
+- Add in-tab anchors/focus/highlighting so repair buttons land closer than tab-level navigation.
+- Add LAN exposure readiness (`lan_token`, `lan_allowlist`, SOCKS5 LAN caveat) and CA trust readiness.
+- Add full-mode tunnel-node URL/auth/version/health readiness.
+
+### BATCH-10 - Android readiness repair dialogs
+
+Status: review; Android verification is static-only until CI or an already-provisioned Gradle environment runs the app build/tests.
+
+Progress estimate: Batch 10 advances the elevation program by about 5%. Overall program progress is about 42% after Batches 1-10.
+
+Scope:
+
+- Bring Android closer to Desktop parity for selected-mode readiness repair actions.
+- Avoid making Android users infer next steps from blocker IDs alone.
+- Keep the mobile editor simple-first: show a short action and contextual repair dialog instead of adding a dense multi-field navigation system in this batch.
+- Preserve advanced account-group data and avoid automatic config mutation from repair actions.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `android/app/src/main/res/values/strings.xml`
+- `android/app/src/main/res/values-fa/strings.xml`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `AndroidReadinessRepair` metadata with localized label/body references and a stable target string.
+- Added `androidRepairForId(id)` for blocking selected-mode readiness IDs:
+  - Apps Script account groups and deployment IDs.
+  - Apps Script `AUTH_KEY`.
+  - Serverless base URL, relay path, and `AUTH_KEY`.
+  - Direct Google edge IP and front SNI.
+  - Local listener host/port blockers.
+- Added a compact `Fix` action under each blocked readiness row that has repair metadata.
+- Added a Material repair dialog that includes:
+  - A specific repair title.
+  - A concise localized explanation.
+  - A stable target such as `setup.serverless.base_url` or `setup.direct.google_ip`.
+- Kept `android.connection_mode` without a repair action because it is informational and does not block connect.
+- Added English and Persian repair strings and kept resource-key parity exact.
+
+Verification:
+
+- Static Kotlin surface check found `AndroidReadinessRepair`, `androidRepairForId`, `btn_fix`, `repair_dialog_title`, `repair_target`, `TextButton`, `AlertDialog`, and `PaddingValues`.
+- Static mapping check confirmed every blocking Android readiness ID used by `androidReadinessItems()` has a repair mapping; only non-blocking `android.connection_mode` has no repair action.
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=172`, `fa_total=172`.
+- Kotlin brace-balance check passed.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Reused the existing readiness card rather than adding a second Android blocker surface.
+- Kept repair target strings aligned with the Rust/Desktop target taxonomy for future generated metadata.
+- Added only localized user-facing strings that are referenced by the new UI.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 10:
+
+- Generate Rust/Kotlin IDs and repair metadata from a shared source instead of manual mirroring.
+- Closed in Batch 17: add generated field anchors; actual scroll/focus/deep-link navigation remains.
+- Add LAN exposure readiness (`lan_token`, `lan_allowlist`, SOCKS5 LAN caveat) and CA trust readiness.
+- Add full-mode tunnel-node URL/auth/version/health readiness.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-11 - Generated readiness contract
+
+Status: review; local verification passed without Gradle.
+
+Progress estimate: Batch 11 advances the elevation program by about 5%. Overall program progress is about 47% after Batches 1-11.
+
+Scope:
+
+- Reduce backend/frontend drift by making Android readiness IDs and repair targets generated from Rust.
+- Preserve Android-specific localized repair labels and body copy while sharing stable target strings.
+- Add a CI freshness gate so stale generated Android readiness constants are caught before release.
+- Document the maintainer workflow in the repo tooling guide.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `tools/generate-readiness-contract.ps1`
+- `tools/README.md`
+- `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `.github/workflows/ci.yml`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `tools/generate-readiness-contract.ps1`:
+  - Reads `pub const ...: ReadinessId = "..."` entries from `src/readiness.rs`.
+  - Reads `repair_for()` target metadata from `src/readiness.rs`.
+  - Verifies repair metadata does not reference unknown readiness IDs.
+  - Generates the Android `ReadinessIds` object.
+  - Generates the Android `ReadinessRepairTargets.targetForId(id)` map.
+  - Supports `-Check` mode for CI freshness verification without modifying files.
+- Regenerated `ReadinessIds.kt` with a generated-file header.
+- Updated Android repair dialogs to use `ReadinessRepairTargets.targetForId(id)` instead of hardcoded target strings in `HomeScreen.kt`.
+- Kept Android-only `android.connection_mode` in the generated Kotlin mirror because it is a platform-only informational readiness row.
+- Added a CI step named `Generated readiness Android contract is current` using `pwsh`.
+- Added `tools/README.md` with regeneration and check commands.
+
+Verification:
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check`
+- `cargo test readiness::tests::readiness_blockers_include_repair_metadata`
+- `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=172`, `fa_total=172`.
+- Kotlin brace-balance check passed.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- The generator is intentionally Gradle-free. It updates source files only and does not create Android build outputs.
+- CI checks freshness but still does not run Android Gradle builds unless a separate approved CI build gate is added.
+
+Garbage collection:
+
+- Removed hardcoded Android repair target literals from `HomeScreen.kt`.
+- Replaced manual Kotlin repair-target mirroring with generated metadata.
+- Added a maintainer doc so the generator is discoverable and less likely to become stale.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 11:
+
+- Closed in Batch 16: generated/shared the full readiness-rule matrix, not only IDs and repair targets.
+- Closed in Batch 17: add generated field anchors; actual scroll/focus/deep-link navigation remains.
+- Add LAN exposure readiness (`lan_token`, `lan_allowlist`, SOCKS5 LAN caveat) and CA trust readiness.
+- Add full-mode tunnel-node URL/auth/version/health readiness.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-12 - CA and LAN readiness warnings
+
+Status: review; Rust/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 12 advances the elevation program by about 5%. Overall program progress is about 52% after Batches 1-12.
+
+Scope:
+
+- Add operational readiness warnings for two common post-setup surprises: local CA trust and LAN-exposed listeners.
+- Keep warnings separate from true Start/Connect blockers so valid configs remain startable.
+- Surface the same readiness concepts in Rust, Desktop, Android, generated Kotlin IDs, and docs.
+- Preserve the simple-first mobile editor while making CA trust state visible.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/readiness.rs`
+- `src/bin/ui.rs`
+- `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `android/app/src/main/res/values/strings.xml`
+- `android/app/src/main/res/values-fa/strings.xml`
+- `docs/safety-security.md`
+- `docs/sharing-and-per-app-routing.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added shared readiness IDs:
+  - `ca.trust`
+  - `ca.android_app_trust`
+  - `lan.exposure`
+  - `lan.token`
+  - `lan.allowlist`
+- Added `ReadinessItem::warning()` and used `ReadinessSeverity::Warning` for CA/LAN operational checks.
+- Added CA warnings for local-MITM modes: Apps Script, Serverless JSON, and Direct.
+- Intentionally omitted CA warnings from Full mode because local MITM CA trust is not part of the full-tunnel traffic path.
+- Added LAN exposure warnings when `listen_host` is `0.0.0.0` or `::`.
+- Added LAN access-control warnings for missing `lan_token` / `lan_allowlist`.
+- Added SOCKS5-specific LAN warning because SOCKS5 cannot carry the HTTP `X-MHRV-F-Token` header.
+- Added repair metadata for CA and LAN targets.
+- Regenerated Android readiness IDs/repair targets from Rust.
+- Updated Desktop readiness rows to show warning status as `check`, with warm color and repair routing to Setup, Network, or Help.
+- Updated Android readiness rows so CA warnings do not block `Save and connect`.
+- Added Android CA install-state awareness to the readiness card.
+- Added localized Android repair dialog copy for CA trust and Android app CA trust.
+- Updated safety and sharing docs to explain the new readiness IDs and why they are warnings rather than blockers.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test readiness::tests::readiness_adds_ca_warning_for_local_mitm_modes_only`
+- `cargo test readiness::tests::readiness_reports_lan_exposure_controls_without_blocking_start`
+- `cargo test --features ui --bin mhrv-f-ui desktop_dashboard_uses_shared_readiness_ids`
+- `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check`
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=176`, `fa_total=176`.
+- Kotlin brace-balance check passed.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Reused the generated readiness contract instead of adding manual Kotlin IDs.
+- Kept CA/LAN checks as non-blocking warnings so no valid startup path is accidentally disabled.
+- Kept Android LAN access-control editing out of this batch because Android does not yet expose `lan_token` / `lan_allowlist` fields.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 12:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Closed in Batch 18: added Android LAN access-control editing for token/allowlist fields.
+- Closed in Batch 16: generated/shared the full readiness-rule matrix, not only IDs and repair targets.
+- Closed in Batch 17: add generated field anchors; actual scroll/focus/deep-link navigation remains.
+- Add full-mode tunnel-node URL/auth/version/health readiness.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-13 - Full-mode tunnel readiness
+
+Status: review; Rust/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 13 advances the elevation program by about 5%. Overall program progress is about 57% after Batches 1-13.
+
+Scope:
+
+- Add explicit full-mode readiness checks for the external tunnel path that the local client cannot infer from config alone.
+- Keep full-mode external checks as warnings so valid local configs can still start.
+- Surface the same full-mode concepts in Rust, Desktop, Android, generated Kotlin IDs, and docs.
+- Clarify the boundary between client config, deployed `CodeFull.gs`, and tunnel-node environment.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/readiness.rs`
+- `src/bin/ui.rs`
+- `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `android/app/src/main/res/values/strings.xml`
+- `android/app/src/main/res/values-fa/strings.xml`
+- `docs/relay-modes.md`
+- `docs/android.md`
+- `tunnel-node/README.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added shared full-mode readiness IDs:
+  - `full.codefull_deployment`
+  - `full.tunnel_node_url`
+  - `full.tunnel_auth`
+  - `full.udp_support`
+  - `full.tunnel_health`
+- Added Rust full-mode warning rows:
+  - Verify every full-mode Apps Script deployment uses `CodeFull.gs`.
+  - Verify `CodeFull.gs` `TUNNEL_SERVER_URL` points at the public tunnel-node origin.
+  - Verify `CodeFull.gs` `TUNNEL_AUTH_KEY` matches tunnel-node `TUNNEL_AUTH_KEY`.
+  - Warn when full-mode UDP is expected but `socks5_port` is unset.
+  - Verify `/healthz`, tunnel-node logs, and public-IP egress after start.
+- Added repair metadata for all new full-mode IDs.
+- Regenerated Android readiness IDs and repair targets from Rust.
+- Added Desktop full-mode warning rows and Help/Network repair routing.
+- Added Android full-mode warning rows that do not block `Save and connect`.
+- Added localized English/Persian Android repair dialogs for full-mode checks.
+- Updated relay-mode, Android, and tunnel-node docs to explain the new readiness IDs and why they are warnings rather than blockers.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test readiness::tests::readiness_adds_full_mode_external_tunnel_checks`
+- `cargo test readiness::tests::readiness_reports_lan_exposure_controls_without_blocking_start`
+- `cargo test --features ui --bin mhrv-f-ui desktop_dashboard_uses_shared_readiness_ids`
+- `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check`
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=186`, `fa_total=186`.
+- Kotlin brace-balance check passed.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Reused the generated readiness contract instead of manually mirroring Kotlin IDs.
+- Did not add fake client config fields for tunnel-node URL/auth, because those values live in `CodeFull.gs` and tunnel-node environment today.
+- Kept `full.*` external checks non-blocking so a locally valid config is not prevented from starting before a remote smoke test.
+- No local Gradle artifacts were created.
+
+Closed by Batches 14-15:
+
+- Batch 14 added tunnel-node `/health/details`; Batch 15 added live Doctor probing through `--tunnel-node-url`.
+
+Remaining after Batch 15:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Closed in Batch 18: added Android LAN access-control editing for token/allowlist fields.
+- Closed in Batch 16: generated/shared the full readiness-rule matrix, not only IDs and repair targets.
+- Closed in Batch 17: add generated field anchors; actual scroll/focus/deep-link navigation remains.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-14 - Full-mode Doctor and tunnel-node health details
+
+Status: review; Rust and tunnel-node verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 14 advances the elevation program by about 5%. Overall program progress is about 62% after Batches 1-14.
+
+Scope:
+
+- Make `mhrv-f doctor` report full-mode tunnel setup checks with the same stable IDs used by readiness.
+- Add a tunnel-node capability endpoint so future Doctor/monitor probes can inspect version and protocol support.
+- Keep remote probing out of this batch unless the user has configured a concrete tunnel-node URL; avoid fake success.
+- Document the new health details endpoint.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/doctor.rs`
+- `tunnel-node/src/main.rs`
+- `tunnel-node/README.md`
+- `docs/relay-modes.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added structured full-mode Doctor items:
+  - `full.codefull_deployment`
+  - `full.tunnel_node_url`
+  - `full.tunnel_auth`
+  - `full.udp_support`
+  - `full.tunnel_health`
+- Kept CodeFull, tunnel-node URL, tunnel auth, and final health smoke tests as Doctor warnings because the local client cannot inspect deployed Apps Script constants or VPS environment variables.
+- Made `full.udp_support` an `OK` Doctor item when `socks5_port` is configured and a `WARN` item when it is absent.
+- Added tunnel-node `GET /health/details` returning JSON with:
+  - service name.
+  - tunnel-node crate version.
+  - protocol marker.
+  - batch/UDP/udpgw capability flags.
+  - auth variable name.
+- Added tunnel-node unit coverage for the advertised capability document.
+- Updated tunnel-node and relay-mode docs to mention `/health/details`.
+
+Verification:
+
+- `cargo fmt`
+- `cargo fmt` in `tunnel-node`
+- `cargo test doctor::tests::doctor_reports_structured_full_mode_external_checks`
+- `cargo test doctor::tests::doctor_warns_when_full_mode_udp_has_no_socks5_listener`
+- `cargo test health_details_advertises_full_tunnel_capabilities` in `tunnel-node`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo check` in `tunnel-node`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check`
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=186`, `fa_total=186`.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Reused the existing readiness IDs instead of creating Doctor-only full-mode identifiers.
+- Did not add a fake tunnel-node URL config field; the current source of truth remains `CodeFull.gs` plus tunnel-node environment.
+- Kept `/healthz` unchanged for simple uptime checks and added `/health/details` for richer tooling.
+- No local Gradle artifacts were created.
+
+Closed by Batch 15:
+
+- Added an explicit Doctor flag so Doctor can perform a real networked `/health/details` probe.
+
+Remaining after Batch 15:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Closed in Batch 18: added Android LAN access-control editing for token/allowlist fields.
+- Closed in Batch 16: generated/shared the full readiness-rule matrix, not only IDs and repair targets.
+- Closed in Batch 17: add generated field anchors; actual scroll/focus/deep-link navigation remains.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-15 - Full-mode Doctor live tunnel-node probe
+
+Status: review; Rust/CLI/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 15 advances the elevation program by about 5%. Overall program progress is about 67% after Batches 1-15.
+
+Scope:
+
+- Add a maintainer/operator-controlled way for Doctor to probe tunnel-node without inventing a persisted client config field.
+- Normalize a public tunnel-node origin or URL to `/health/details`.
+- Support both HTTP and HTTPS using existing Rust networking/TLS dependencies.
+- Validate the tunnel-node capability document against the full-mode contract.
+- Wire the same option into `doctor` and `doctor-fix`.
+- Document the flag in CLI-facing docs and tunnel-node guidance.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/doctor.rs`
+- `src/main.rs`
+- `docs/doctor.md`
+- `docs/relay-modes.md`
+- `tunnel-node/README.md`
+- `README.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `DoctorOptions` and `run_with_options()` so CLI-specific probe inputs do not leak into persistent config.
+- Added `run_with_fixes_and_options()` so `doctor-fix --tunnel-node-url ...` runs the same before/after remote health check.
+- Added `--tunnel-node-url URL` parsing and help text in the CLI.
+- Accepted bare hosts and full URLs, defaulted bare hosts to `https://`, and normalized all inputs to `/health/details`.
+- Added native HTTP and HTTPS health probing with:
+  - TCP connect timeout.
+  - rustls/webpki certificate validation for HTTPS.
+  - JSON `Accept` header.
+  - response size bounds.
+  - chunked response decoding.
+  - secret-safe display URL redaction.
+- Validated the capability document for:
+  - `status = "ok"`
+  - `protocol = "mhrv-full-tunnel"`
+  - `supports_batch = true`
+  - `supports_udp = true`
+  - `supports_udpgw = true`
+- Kept a manual warning when no tunnel-node URL is provided, because Doctor still cannot inspect deployed `CodeFull.gs` constants or VPS environment variables by itself.
+- Reported a `FAIL` item when an explicit URL is invalid, unreachable, fails TLS, returns non-2xx, or returns invalid JSON.
+- Reported a `WARN` item when the node is reachable but capability flags are incomplete or version-skewed.
+- Reported an `OK` item when the node is reachable and advertises the expected full-tunnel capabilities.
+- Added regression coverage for URL normalization and a local live HTTP `/health/details` probe.
+- Updated docs so full-mode setup now includes the optional Doctor probe before the IP-check smoke test.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test doctor::tests::tunnel_node_health_url_normalization_targets_details_endpoint`
+- `cargo test doctor::tests::doctor_can_probe_tunnel_node_health_details`
+- `cargo test doctor::tests::doctor_reports_structured_full_mode_external_checks`
+- `cargo test doctor::tests::doctor_warns_when_full_mode_udp_has_no_socks5_listener`
+- `cargo test doctor::tests`
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check`
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=186`, `fa_total=186`.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Did not add a fake persisted `tunnel_node_url` to `config.json`; `CodeFull.gs` and tunnel-node environment remain the deployment source of truth.
+- Reused the existing `full.tunnel_health` readiness ID for Doctor output instead of creating a duplicate health namespace.
+- Added no new dependencies; the probe uses already-present `tokio`, `rustls`, `tokio-rustls`, `webpki-roots`, `serde_json`, and `url`.
+- Left Android generated readiness contract unchanged because no readiness IDs or repair targets changed.
+- No local Gradle artifacts were created.
+
+Closed by Batch 16:
+
+- Generated and checked the full readiness-rule matrix, including ID, severity, applicability, OK condition, failure condition, and repair target.
+
+Remaining after Batch 16:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Closed in Batch 18: added Android LAN access-control editing for token/allowlist fields.
+- Closed in Batch 17: add generated field anchors; actual scroll/focus/deep-link navigation remains.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-16 - Generated readiness rule matrix
+
+Status: review; Rust/CLI/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 16 advances the elevation program by about 5%. Overall program progress is about 72% after Batches 1-16.
+
+Scope:
+
+- Make the readiness contract more complete than ID lists and repair targets.
+- Keep Rust as the source of truth for readiness rules.
+- Generate a human-readable docs matrix from the same source as Android readiness IDs.
+- Extend the existing CI generator freshness gate rather than adding a parallel script.
+- Fix stale tests uncovered by running the full readiness test module.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/readiness.rs`
+- `tools/generate-readiness-contract.ps1`
+- `docs/readiness-matrix.md`
+- `.github/workflows/ci.yml`
+- `docs/index.md`
+- `docs/doctor.md`
+- `README.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `ReadinessRule` and `READINESS_RULES` to `src/readiness.rs`.
+- Cataloged all 31 readiness IDs with:
+  - severity.
+  - applies-to scope.
+  - OK condition.
+  - not-OK condition.
+  - repair target.
+- Added `readiness_rules()` for tests and future UI/doc tooling.
+- Added `readiness_rule_catalog_is_complete_and_matches_repairs()` to catch:
+  - duplicate rule IDs.
+  - missing catalog entries.
+  - empty matrix fields.
+  - drift between rule repair targets and `repair_for_id()`.
+- Extended `tools/generate-readiness-contract.ps1` to:
+  - parse `ReadinessRule` catalog entries.
+  - fail on unknown, duplicate, or missing rule IDs.
+  - fail if a rule repair target differs from Rust repair metadata.
+  - continue generating Android `ReadinessIds.kt`.
+  - generate `docs/readiness-matrix.md`.
+  - check both generated outputs in `-Check` mode.
+- Renamed the CI step from Android-only readiness contract to generated readiness contracts.
+- Linked the generated readiness matrix from README, docs index, and Doctor guide.
+- Updated the stale Apps Script readiness test expectation to include the non-blocking CA warnings added in earlier batches.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test readiness::tests::readiness_rule_catalog_is_complete_and_matches_repairs`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check`
+- `cargo test readiness::tests`
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo fmt --check`
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=186`, `fa_total=186`.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Removed the stale roadmap claim that the full generated readiness-rule matrix still remained.
+- Kept the generated Kotlin contract unchanged semantically: still 31 IDs and 31 repair targets.
+- Added no new dependency or local artifact type.
+- Reused the existing generator and CI gate instead of creating another one-off script.
+- No local Gradle artifacts were created.
+
+Closed by Batch 17:
+
+- Added generated Desktop/Android repair anchors so every readiness repair target names the exact section or field to open.
+
+Remaining after Batch 17:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Closed in Batch 18: added Android LAN access-control editing for token/allowlist fields.
+- Add actual scroll/focus/deep-link navigation from repair actions to the anchored field.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-17 - Generated repair anchors
+
+Status: review; Rust/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 17 advances the elevation program by about 5%. Overall program progress is about 77% after Batches 1-17.
+
+Scope:
+
+- Keep repair-location guidance in Rust, beside readiness IDs/rules/repair targets.
+- Generate Android repair anchors and docs matrix anchor columns from that source.
+- Surface field-location guidance in Desktop and Android without attempting risky scroll/focus refactors inside the large UI files yet.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/readiness.rs`
+- `tools/generate-readiness-contract.ps1`
+- `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `android/app/src/main/res/values/strings.xml`
+- `android/app/src/main/res/values-fa/strings.xml`
+- `docs/readiness-matrix.md`
+- `src/bin/ui.rs`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `ReadinessRepairAnchor` and `READINESS_REPAIR_ANCHORS`.
+- Added 31 repair anchors, one for every generated repair target.
+- Added `repair_anchor_for_target()` for Desktop and tests.
+- Extended the readiness catalog test so every repair target must have Desktop and Android anchor text.
+- Extended the generator to:
+  - parse anchor entries.
+  - fail on duplicate anchor targets.
+  - fail when any repair target lacks an anchor.
+  - generate Kotlin `ReadinessRepairAnchor` and `ReadinessRepairAnchors`.
+  - add Desktop and Android anchor columns to `docs/readiness-matrix.md`.
+  - report `anchors=31` in generated/check output.
+- Desktop repair buttons now keep their tab jump and add exact `Open: ...` anchor text in the hover tooltip.
+- Android repair dialogs now show an `Open: ...` line from the generated anchor map.
+- Added localized English/Persian Android `repair_anchor` string.
+
+Verification:
+
+- `cargo fmt`
+- `cargo test readiness::tests::readiness_rule_catalog_is_complete_and_matches_repairs`
+- `cargo test --features ui --bin mhrv-f-ui desktop_repair_actions_route_to_expected_tabs`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check`
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo fmt --check`
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=187`, `fa_total=187`.
+- Kotlin brace-balance check passed.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Reused the existing readiness generator instead of adding a second anchor generator.
+- Kept repair target strings stable; anchors are additional metadata, not a breaking target rename.
+- Did not attempt brittle scroll/focus behavior inside the monolithic Desktop/Android UI files before the next UI-structure pass.
+- No local Gradle artifacts were created.
+
+Closed by Batch 18:
+
+- Added Android LAN access-control editing and config preservation for `lan_token` and `lan_allowlist`.
+
+Remaining after Batch 18:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Add actual scroll/focus/deep-link navigation from repair actions to the anchored field.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-18 - Android LAN access-control editing
+
+Status: review; Rust/Desktop verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 18 advances the elevation program by about 5%. Overall program progress is about 82% after Batches 1-18.
+
+Scope:
+
+- Close the Android LAN parity gap without adding a complex mobile-only network editor.
+- Keep Rust readiness and generated docs as the source of truth for LAN warning IDs, repair targets, and repair anchors.
+- Expose the safety fields Android users need when they enable LAN sharing.
+- Preserve LAN access controls through save, import, export, and QR/deep-link config payloads.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `android/app/src/main/java/com/farnam/mhrvf/ConfigStore.kt`
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `android/app/src/main/res/values/strings.xml`
+- `android/app/src/main/res/values-fa/strings.xml`
+- `src/readiness.rs`
+- `android/app/src/main/java/com/farnam/mhrvf/ReadinessIds.kt`
+- `docs/readiness-matrix.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added Android `MhrvConfig.lanToken` and `MhrvConfig.lanAllowlist`.
+- Serialized non-empty `lan_token` and `lan_allowlist` in Android `toJson()`.
+- Loaded both fields from persisted configs and imported/shared configs.
+- Preserved non-default `listen_host`, `listen_port`, and `socks5_port` in compact config sharing so LAN sharing payloads do not drop the listener context.
+- Preserved explicit `socks5_port: null` on import/decode via an optional integer helper.
+- Added Advanced UI fields for:
+  - LAN token for HTTP/CONNECT clients.
+  - LAN allowed IP/CIDR entries for SOCKS5 and general LAN scoping.
+- Added Android LAN readiness rows when `listenHost` is `0.0.0.0` or `::`:
+  - `lan.exposure` non-blocking warning.
+  - `lan.token` non-blocking warning, OK when token or allowlist exists.
+  - `lan.allowlist` non-blocking warning when SOCKS5 is enabled, OK when allowlist exists.
+- Added Android repair-dialog mappings for all three LAN readiness IDs.
+- Added English and Persian strings for LAN controls and repair dialogs.
+- Updated Rust repair anchors so generated Android guidance now points to the new LAN token / allowed IP fields instead of config import.
+- Regenerated `ReadinessIds.kt` and `docs/readiness-matrix.md`.
+
+Verification:
+
+- `cargo fmt`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1`
+- `cargo test readiness::tests::readiness_rule_catalog_is_complete_and_matches_repairs`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check`
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo fmt --check`
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=197`, `fa_total=197`.
+- Static Kotlin LAN reference checks confirmed `lanToken`, `lanAllowlist`, `lan_token`, `lan_allowlist`, `LAN_TOKEN`, `LAN_ALLOWLIST`, LAN repair strings, and LAN Advanced strings are present.
+- Kotlin static brace-balance passed after stripping strings and comments.
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Removed the stale generated Android repair-anchor wording that said LAN token/allowlist still required config import.
+- Reused existing LAN readiness IDs and repair targets instead of creating duplicate Android-only warnings.
+- Added no new dependencies and no local Android build artifacts.
+- Kept LAN sharing as a guarded advanced control instead of hiding it or leaving it half-supported.
+- No local Gradle artifacts were created.
+
+Remaining after Batch 18:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Add actual scroll/focus/deep-link navigation from repair actions to the anchored field.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+
+### BATCH-19 - Upstream candidate port audit and Apps Script fallback hardening
+
+Status: review; Rust/Desktop and helper verification passed locally, Android verification remained static-only.
+
+Progress estimate: Batch 19 advances the elevation program by about 5%. Overall program progress is about 87% after Batches 1-19.
+
+Scope:
+
+- Audit the donor commit list for useful, portable improvements.
+- Port only low-risk improvements that close existing parity or reliability gaps.
+- Avoid duplicating features already present in this repo.
+- Avoid large new backend surfaces without a dedicated security/docs pass.
+- Keep Gradle untouched.
+
+Donor candidate audit result:
+
+- Python CI/release workflows were not ported directly because this Rust/Android repo already has its own CI and release architecture.
+- Python LAN-sharing/banner polish was not ported directly because Android LAN access-control parity was already closed in Batch 18 and Desktop has separate UX surfaces.
+- IP-leak header stripping was already present in the Rust and Apps Script helper surfaces, so no duplicate implementation was added.
+- SNI pool reorder/probing was deferred; changing fronting order or live probing needs Rust-specific measurement and rollout criteria.
+- Apps Script `HtmlService` JSON wrapping was deferred because the current helpers intentionally use `ContentService` JSON plus decoy/diagnostic behavior; deployed-protocol compatibility needs a separate decision.
+- Val.town exit-node support was deferred because this repo already has Cloudflare Worker helper and full-tunnel/tunnel-node paths; adding a new second-hop backend requires schema, docs, security, and UI work.
+- Cloudflare Worker backend support was already present in this repo.
+- Android `youtube_via_relay` was beneficial and was ported.
+- TLS `close_notify` tolerance was not changed in this batch; existing Rust response handling already has `UnexpectedEof` handling in some paths and should be investigated with focused regression tests before altering protocol reads.
+
+Changed files:
+
+- `android/app/src/main/java/com/farnam/mhrvf/ConfigStore.kt`
+- `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`
+- `android/app/src/main/res/values/strings.xml`
+- `android/app/src/main/res/values-fa/strings.xml`
+- `assets/apps_script/Code.gs`
+- `assets/apps_script/CodeFull.gs`
+- `assets/apps_script/CodeCloudflareWorker.gs`
+- `assets/apps_script/tests/batch_fallback_test.js`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added Android `MhrvConfig.youtubeViaRelay`.
+- Persisted `youtube_via_relay` through Android load, save, import, export, and compact config sharing.
+- Added an Advanced settings switch for YouTube relay routing.
+- Added English and Persian Android copy for the new YouTube relay control.
+- Added `SAFE_REPLAY_METHODS` to the normal, full, and Cloudflare Worker Apps Script helpers.
+- Hardened Apps Script batch handling so bad/non-object items are reported per item.
+- Wrapped helper `fetchAll()` calls so a batch-level failure falls back to individual requests.
+- Replayed only safe methods (`GET`, `HEAD`, `OPTIONS`) after batch failure.
+- Refused unsafe replay for mutating methods with a clear per-item error.
+- Preserved original batch response order with explicit original-index response maps.
+- Added source-level tests that check the fallback contract across all three Apps Script helpers.
+
+Verification:
+
+- `node assets\apps_script\tests\batch_fallback_test.js`
+- `node assets\apps_script\tests\edge_dns_test.js`
+- Apps Script helper syntax checked through `node --check` via stdin for `.gs` files.
+- XML string-key parity passed: `missing_fa=0`, `extra_fa=0`, `en_total=199`, `fa_total=199`.
+- Kotlin static brace-balance passed after stripping strings and comments.
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo fmt --check`
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- Direct `node --check assets\apps_script\Code.gs` is not valid because Node treats `.gs` as an unknown ESM extension. The syntax check was run by piping each helper source through `node --check` via stdin.
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install. Android compile/unit/screenshot verification remains for CI or an already-provisioned Gradle environment.
+
+Garbage collection:
+
+- Added no donor exit-node files, no duplicate Cloudflare Worker helper, and no new dependencies.
+- Left SNI probing/reorder and TLS EOF changes out of this batch rather than introducing speculative protocol behavior.
+- Reused the existing Android Advanced settings structure instead of adding a separate YouTube-only section.
+- Kept CI as the source of truth for Android build verification.
+- No local Gradle artifacts were created.
+
+Closed by Batch 19:
+
+- Added Android `youtube_via_relay` parity with Rust/Desktop.
+- Added safe Apps Script batch fallback hardening across normal, full, and Cloudflare Worker helpers.
+- Added a source-level helper compatibility test for batch fallback behavior.
+
+Remaining after Batch 19:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Add actual scroll/focus/deep-link navigation from repair actions to the anchored field.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+- Add deeper deployed-helper JSON-shape/version-marker tests and release checklist items.
+- Investigate Rust TLS `UnexpectedEof` behavior with focused tests before changing response parsing.
+- Decide whether a Val.town-style exit node is strategically useful beside Cloudflare Worker and full tunnel support.
+
+### BATCH-20 - Apps Script compatibility probes and release checklist
+
+Status: review; Rust/Desktop/helper verification passed locally, Android build verification remains CI-only.
+
+Progress estimate: Batch 20 advances the elevation program by about 5%. Overall program progress is about 92% after Batches 1-20.
+
+Scope:
+
+- Close the stale-deployed-helper support gap left after Batch 19.
+- Add visible helper metadata without exposing secrets.
+- Keep normal unauthenticated browser visits decoy-shaped unless the explicit compatibility probe is requested.
+- Make CI run every Apps Script helper test instead of one hard-coded test.
+- Add maintainer release checklist coverage for helper/backend/docs parity.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `assets/apps_script/Code.gs`
+- `assets/apps_script/CodeFull.gs`
+- `assets/apps_script/CodeCloudflareWorker.gs`
+- `assets/apps_script/tests/compat_marker_test.js`
+- `assets/apps_script/README.md`
+- `docs/cloudflare-worker-json-relay.md`
+- `docs/cfw-reference-audit.md`
+- `docs/release-checklist.md`
+- `docs/index.md`
+- `README.md`
+- `.github/workflows/ci.yml`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `HELPER_KIND`, `HELPER_VERSION`, `HELPER_PROTOCOL`, and `HELPER_FEATURES` to all Apps Script helpers.
+- Added a non-secret compatibility probe:
+  - `Code.gs`: `kind = apps_script`
+  - `CodeFull.gs`: `kind = apps_script_full`
+  - `CodeCloudflareWorker.gs`: `kind = apps_script_cloudflare_worker`
+- Preserved the existing decoy `doGet` default for normal browser visits.
+- Added `assets/apps_script/tests/compat_marker_test.js` to guard helper markers, probe exposure, and decoy default behavior.
+- Updated CI so the Apps Script helper test step runs every `assets/apps_script/tests/*.js` file.
+- Documented the `?compat=1` probe in `assets/apps_script/README.md`, `README.md`, `docs/cloudflare-worker-json-relay.md`, and `docs/cfw-reference-audit.md`.
+- Added `docs/release-checklist.md` with source/generated checks, helper compatibility checks, backend/docs parity checks, and artifact-source-of-truth guidance.
+- Linked the release checklist from `docs/index.md`.
+
+Verification:
+
+- `node assets\apps_script\tests\compat_marker_test.js`
+- `node assets\apps_script\tests\batch_fallback_test.js`
+- `node assets\apps_script\tests\edge_dns_test.js`
+- Apps Script helper and test syntax checked through `node --check` via stdin.
+- `cargo fmt --check`
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- `.gs` files were syntax-checked through stdin because direct `node --check file.gs` is rejected by Node's extension loader.
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install.
+
+Garbage collection:
+
+- Added no new runtime dependencies.
+- Reused existing helper docs rather than creating a duplicate backend guide.
+- Did not add a live deployed-helper network test that would require user secrets or a public deployment.
+- Kept the compatibility probe metadata-only and non-secret.
+- No local Gradle artifacts were created.
+
+Closed by Batch 20:
+
+- Helper scripts now carry support-visible compatibility metadata.
+- Release review now has an explicit helper compatibility checklist.
+- CI now runs all Apps Script helper tests, including the new compatibility marker test.
+
+Remaining after Batch 20:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Add actual scroll/focus/deep-link navigation from repair actions to the anchored field.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+- Add deeper live/deployed helper relay-envelope tests when a test deployment is available.
+- Investigate Rust TLS `UnexpectedEof` behavior with focused tests before changing response parsing.
+- Decide whether a Val.town-style exit node is strategically useful beside Cloudflare Worker and full tunnel support.
+
+### BATCH-21 - Repository cleanliness gate
+
+Status: review; CI-equivalent local checks passed, Android build verification remains CI-only.
+
+Progress estimate: Batch 21 advances the elevation program by about 5%. Overall program progress is about 97% after Batches 1-21.
+
+Scope:
+
+- Turn the repo hygiene and "no stale leftovers" policy into an enforceable check.
+- Keep `dist/` and `releases/` compatible with the maintainer decision: allowed as backup/archive material, but not release source of truth.
+- Catch local secrets, oversized source files, binary build artifacts, and stale-prone source-doc image references.
+- Document how maintainers should run the check.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `tools/check-repo-cleanliness.py`
+- `.github/workflows/ci.yml`
+- `.gitignore`
+- `tools/README.md`
+- `docs/release-checklist.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `tools/check-repo-cleanliness.py`.
+- The script fails on:
+  - local secret/config files in the maintained source tree.
+  - binary build artifacts such as APK/AAB/native binaries outside archive folders.
+  - unexpectedly large source-tree files.
+  - source image assets without explicit policy.
+  - stale-prone markdown image/screenshot references in maintained docs.
+- The script reports `dist/` and `releases/` as allowed backup/archive folders instead of failing local workspaces that keep them.
+- `releases/` now must include a `README.md` when present.
+- The audit roadmap is allowed to mention stale screenshot paths as evidence; user-facing docs are not.
+- CI now runs `python3 tools/check-repo-cleanliness.py`.
+- `.gitignore` now covers root `build/`, Android Gradle/build/C++ outputs, and APK/AAB artifacts.
+- `tools/README.md` documents local use of the cleanliness check.
+- `docs/release-checklist.md` includes the cleanliness check and repeats that CI release artifacts are authoritative.
+
+Verification:
+
+- `python tools\check-repo-cleanliness.py`
+- `python -m py_compile tools\check-repo-cleanliness.py`
+- `Get-ChildItem assets\apps_script\tests\*.js | ForEach-Object { node $_.FullName }`
+- Apps Script helper syntax checked through `node --check` via stdin.
+- `cargo fmt --check`
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- The check intentionally prints notes for local `dist/` and `releases/` folders. Those notes are not failures; they document the backup/archive status chosen by the maintainer.
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install.
+
+Garbage collection:
+
+- Added no new runtime dependencies.
+- Avoided moving or deleting local archive/build folders in this batch.
+- Kept the check source-only and deterministic so it is safe for CI and local release review.
+- No local Gradle artifacts were created.
+
+Closed by Batch 21:
+
+- CI now has a repository cleanliness gate.
+- Release review now has an explicit cleanliness command.
+- `.gitignore` covers more local build outputs and package artifacts.
+
+Remaining after Batch 21:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Add actual scroll/focus/deep-link navigation from repair actions to the anchored field.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+- Add deeper live/deployed helper relay-envelope tests when a test deployment is available.
+- Add broader stale version/name, markdown link, Persian-doc counterpart, and example-config validation gates.
+- Investigate Rust TLS `UnexpectedEof` behavior with focused tests before changing response parsing.
+- Decide whether a Val.town-style exit node is strategically useful beside Cloudflare Worker and full tunnel support.
+
+### BATCH-22 - Example config contract validation
+
+Status: review; Rust/Desktop/helper verification passed locally, Android build verification remains CI-only.
+
+Progress estimate: Batch 22 completes the current implementation sequence and brings the tracked elevation program to about 100% after Batches 1-22. The roadmap still records future hardening items that need external CI devices, live deployments, or product decisions.
+
+Scope:
+
+- Prevent bundled root example configs from drifting away from the Rust config schema.
+- Use the real config load path, including legacy migration and validation.
+- Document the focused test command for release review.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `src/config.rs`
+- `tools/README.md`
+- `docs/release-checklist.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `bundled_example_configs_load_and_validate`.
+- The test loads these files through `Config::from_json_str`:
+  - `config.example.json`
+  - `config.direct.example.json`
+  - `config.fronting-groups.example.json`
+  - `config.full.example.json`
+  - `config.google-only.example.json`
+- The test verifies each example resolves to the intended mode:
+  - Apps Script for `config.example.json`
+  - Direct for direct, fronting-groups, and legacy google-only examples
+  - Full for `config.full.example.json`
+- Added the focused test command to `tools/README.md`.
+- Added the example-config contract test to the release checklist.
+
+Verification:
+
+- `cargo test bundled_example_configs_load_and_validate`
+- `python tools\check-repo-cleanliness.py`
+- `python -m py_compile tools\check-repo-cleanliness.py`
+- `Get-ChildItem assets\apps_script\tests\*.js | ForEach-Object { node $_.FullName }`
+- `cargo fmt --check`
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- This test is part of the Rust test suite, so CI's normal `cargo test --all-targets --features ui` path will run it.
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install.
+
+Garbage collection:
+
+- Reused the existing Rust config parser instead of adding a duplicate schema checker.
+- Added no new dependencies.
+- Did not change example semantics or placeholders.
+- No local Gradle artifacts were created.
+
+Closed by Batch 22:
+
+- Root example configs now have a Rust contract test.
+- Release review now has an explicit example-config validation command.
+
+Remaining after Batch 22:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Add actual scroll/focus/deep-link navigation from repair actions to the anchored field.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+- Add deeper live/deployed helper relay-envelope tests when a test deployment is available.
+- Add broader stale version/name, markdown link, and Persian-doc counterpart gates.
+- Add config example round-trip assertions if/when examples should become canonical formatter outputs.
+- Investigate Rust TLS `UnexpectedEof` behavior with focused tests before changing response parsing.
+- Decide whether a Val.town-style exit node is strategically useful beside Cloudflare Worker and full tunnel support.
+
+### BATCH-23 - Markdown local link gate
+
+Status: post-100 hardening; local checks passed, Android build verification remains CI-only.
+
+Progress estimate: The tracked elevation sequence remains about 100%. Batch 23 reduces residual documentation drift risk after the main sequence by adding a local link gate.
+
+Scope:
+
+- Add a dependency-free local Markdown link checker.
+- Validate maintained docs and maintainer docs without requiring network access.
+- Skip external URLs and pure in-page anchors for now.
+- Wire the check into CI and release review.
+- Keep Gradle untouched.
+
+Changed files:
+
+- `tools/check-doc-links.py`
+- `.github/workflows/ci.yml`
+- `tools/README.md`
+- `docs/release-checklist.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `tools/check-doc-links.py`.
+- The script scans:
+  - `README.md`
+  - `SF_README.md`
+  - `docs/**/*.md`
+  - `tools/README.md`
+  - `assets/apps_script/README.md`
+  - `tunnel-node/README.md`
+  - `releases/README.md`
+- The script strips fragments/query strings, URL-decodes local paths, and verifies that relative file or directory targets exist.
+- The script rejects local links that escape the repo.
+- External URLs, non-file URI schemes, and pure `#anchor` links are skipped.
+- CI now runs `python3 tools/check-doc-links.py`.
+- `tools/README.md` and `docs/release-checklist.md` document the local command.
+
+Verification:
+
+- `python tools\check-doc-links.py`
+- `python -m py_compile tools\check-doc-links.py`
+- `python tools\check-repo-cleanliness.py`
+- `cargo test bundled_example_configs_load_and_validate`
+- `Get-ChildItem assets\apps_script\tests\*.js | ForEach-Object { node $_.FullName }`
+- `cargo fmt --check`
+- `cargo check --bin mhrv-f`
+- `cargo check --features ui --bin mhrv-f-ui`
+- Confirmed no Gradle, Java, or Kotlin process was left running.
+
+Tooling note:
+
+- The link checker is intentionally local-only. External link health and exact heading-anchor validation can be added later as separate checks.
+- Gradle was intentionally not run because the maintainer explicitly disallowed local Gradle download/install.
+
+Garbage collection:
+
+- Added no new dependencies.
+- Reused the same CI `repo-sanity` job instead of adding another workflow.
+- Did not weaken checks for broken local docs links; the current docs passed as-is.
+- No local Gradle artifacts were created.
+
+Closed by Batch 23:
+
+- Maintained Markdown docs now have a CI local-link gate.
+- Release review now has an explicit local-link command.
+
+Remaining after Batch 23:
+
+- Add live OS/NSS trust checks to the readiness model where platform APIs permit it.
+- Add actual scroll/focus/deep-link navigation from repair actions to the anchored field.
+- Add Android CI/unit/screenshot coverage when CI Gradle is available.
+- Add deeper live/deployed helper relay-envelope tests when a test deployment is available.
+- Add external-link, heading-anchor, stale version/name, and Persian-doc counterpart gates.
+- Add config example round-trip assertions if/when examples should become canonical formatter outputs.
+- Investigate Rust TLS `UnexpectedEof` behavior with focused tests before changing response parsing.
+- Decide whether a Val.town-style exit node is strategically useful beside Cloudflare Worker and full tunnel support.
 
 ## Open Questions
 

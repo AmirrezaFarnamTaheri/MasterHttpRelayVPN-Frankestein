@@ -40,3 +40,16 @@ second runnable product. The maintained integration lives in:
    target sites see traffic from, but it also adds Cloudflare limits and another
    secret. Keep it as an optional Apps Script companion, not a separate native
    mode.
+
+## Compatibility Marker
+
+`CodeCloudflareWorker.gs` now exposes the same helper metadata probe as the
+other Apps Script helpers:
+
+```text
+https://script.google.com/macros/s/DEPLOYMENT_ID/exec?compat=1
+```
+
+For this variant, `kind` must be `apps_script_cloudflare_worker`. This gives
+support and release checks a cheap way to confirm that a deployed Apps Script is
+the maintained Cloudflare Worker bridge, not an older donor copy.

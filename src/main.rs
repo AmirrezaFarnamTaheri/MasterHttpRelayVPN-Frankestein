@@ -21,6 +21,7 @@ struct Args {
     install_cert: bool,
     remove_cert: bool,
     no_cert_check: bool,
+    tunnel_node_url: Option<String>,
     command: Command,
 }
 
@@ -58,6 +59,8 @@ OPTIONS:
     --install-cert       Install the MITM CA certificate and exit
     --remove-cert        Remove the MITM CA from trust stores and delete local ca/
     --no-cert-check      Skip the auto-install-if-untrusted check on startup
+    --tunnel-node-url URL
+                         Full-mode Doctor: probe URL/health/details live
     -h, --help           Show this message
     -V, --version        Show version
 
@@ -76,6 +79,7 @@ fn parse_args() -> Result<Args, String> {
     let mut install_cert = false;
     let mut remove_cert = false;
     let mut no_cert_check = false;
+    let mut tunnel_node_url: Option<String> = None;
     let mut command = Command::Serve;
 
     let mut raw: Vec<String> = std::env::args().skip(1).collect();
@@ -141,6 +145,12 @@ fn parse_args() -> Result<Args, String> {
             "--install-cert" => install_cert = true,
             "--remove-cert" => remove_cert = true,
             "--no-cert-check" => no_cert_check = true,
+            "--tunnel-node-url" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| "--tunnel-node-url needs a URL".to_string())?;
+                tunnel_node_url = Some(v);
+            }
             other => return Err(format!("unknown argument: {}", other)),
         }
     }
@@ -152,6 +162,7 @@ fn parse_args() -> Result<Args, String> {
         install_cert,
         remove_cert,
         no_cert_check,
+        tunnel_node_url,
         command,
     })
 }
@@ -518,7 +529,10 @@ async fn async_main() -> ExitCode {
             };
         }
         Command::Doctor => {
-            let report = mhrv_jni::doctor::run(&config).await;
+            let doctor_options = mhrv_jni::doctor::DoctorOptions {
+                tunnel_node_url: args.tunnel_node_url.clone(),
+            };
+            let report = mhrv_jni::doctor::run_with_options(&config, &doctor_options).await;
             for it in &report.items {
                 let level = match it.level {
                     mhrv_jni::doctor::DoctorLevel::Ok => "OK",
@@ -541,7 +555,11 @@ async fn async_main() -> ExitCode {
             };
         }
         Command::DoctorFix => {
-            let (before, fixes, after) = mhrv_jni::doctor::run_with_fixes(&config).await;
+            let doctor_options = mhrv_jni::doctor::DoctorOptions {
+                tunnel_node_url: args.tunnel_node_url.clone(),
+            };
+            let (before, fixes, after) =
+                mhrv_jni::doctor::run_with_fixes_and_options(&config, &doctor_options).await;
             println!("== Doctor (before) ==");
             for it in &before.items {
                 let level = match it.level {

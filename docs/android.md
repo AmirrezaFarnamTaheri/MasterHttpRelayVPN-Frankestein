@@ -151,6 +151,17 @@ Pick the mode first. The credential fields below are mode-specific; leave fields
 | **google_ip** | Leave the default. The next step will auto-populate it |
 | **front_domain** | Leave at `www.google.com` |
 
+For Full tunnel, the readiness card shows extra non-blocking checks:
+
+- `full.codefull_deployment`: the pasted deployment must be `CodeFull.gs`.
+- `full.tunnel_node_url`: `CodeFull.gs` must point at your tunnel-node origin.
+- `full.tunnel_auth`: `TUNNEL_AUTH_KEY` must match between `CodeFull.gs` and tunnel-node.
+- `full.udp_support`: set a SOCKS5 port if apps need UDP ASSOCIATE.
+- `full.tunnel_health`: verify `/healthz`, tunnel-node logs, and a public IP-check page.
+
+These checks do not block Connect because Android cannot inspect the Apps
+Script constants or your VPS environment.
+
 Tap anywhere outside the text fields to dismiss the keyboard.
 
 Important distinction: Android has one compact Apps Script credential area,

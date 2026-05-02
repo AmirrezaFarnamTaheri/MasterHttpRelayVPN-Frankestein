@@ -125,7 +125,10 @@ Use the bundled script file so the client and relay protocol stay in sync:
 5. **Deploy → New deployment → Web app**.
    - Execute as: **Me**
    - Who has access: **Anyone**
-6. Copy the **Deployment ID** (the long random string in the URL).
+6. Open `https://script.google.com/macros/s/DEPLOYMENT_ID/exec?compat=1`
+   and confirm it returns `kind: "apps_script"`. This confirms you pasted the
+   current helper without exposing your auth key.
+7. Copy the **Deployment ID** (the long random string in the URL).
 
 #### Can't reach `script.google.com` from your network?
 
@@ -443,7 +446,7 @@ Memory footprint is ~15-20 MB resident — fine on anything with ≥128 MB RAM. 
 ## Diagnostics
 
 - **`mhrv-f test`** — sends one request through the relay and reports success/latency. Use this first whenever something breaks — it isolates "relay is up" from "client config is wrong".
-- **`mhrv-f doctor`** — guided first-run diagnostics. Checks config warnings, MITM CA trust, and runs the end-to-end relay probe, printing actionable fixes.
+- **`mhrv-f doctor`** — guided first-run diagnostics. Checks config warnings, MITM CA trust, full-mode readiness reminders, and the end-to-end relay probe where applicable. In full mode, add `--tunnel-node-url https://<tunnel-node>` to probe `/health/details` live.
 - **`mhrv-f rollback-config`** — restore the last-known-good config snapshot (saved automatically before UI overwrites config.json). Useful if you saved a broken config and can’t start.
 - **`mhrv-f scan-ips`** — parallel TLS probe of 28 known Google frontend IPs, sorted by latency. Take the winner and put it in `google_ip`. The UI has the same thing behind the **scan** button next to the Google IP field.
 - **`mhrv-f test-sni`** — parallel TLS probe of every SNI name in your rotation pool against the configured `google_ip`. Tells you which front-domain names actually pass through your ISP's DPI. The UI has the same thing in the **SNI pool…** floating window, with checkboxes, per-row **Test** buttons, and a **Keep ✓ only** button that auto-trims to what worked.
@@ -451,6 +454,7 @@ Memory footprint is ~15-20 MB resident — fine on anything with ≥128 MB RAM. 
 
 Docs:
 - [Doctor guide (EN)](docs/doctor.md)
+- [Readiness matrix](docs/readiness-matrix.md)
 - [راهنمای دکتر (FA)](docs/doctor.fa.md)
 - [Field notes and edge candidates](docs/field-notes.md)
 - [Per-app routing and LAN sharing](docs/sharing-and-per-app-routing.md)
@@ -558,6 +562,8 @@ Donations cover hosting, self-hosted CI runner costs, and continued maintenance.
 - **`Who has access`**: **`Anyone`**
 
 ۷. روی **`Deploy`** کلیک کنید. گوگل یک **`Deployment ID`** نشان می‌دهد — رشتهٔ طولانی تصادفی که داخل آدرس `URL` است. کپی‌اش کنید؛ در برنامه لازم دارید  
+
+۸. آدرس `https://script.google.com/macros/s/DEPLOYMENT_ID/exec?compat=1` را باز کنید و مطمئن شوید `kind` برابر `apps_script` است. این فقط اطلاعات سازگاری اسکریپت را نشان می‌دهد و رمز `AUTH_KEY` را افشا نمی‌کند.
 
 > **نکته:** اگر نمی‌دانید رمز `AUTH_KEY` چه بگذارید، یک رشتهٔ تصادفی ۱۶ تا ۲۴ کاراکتری بسازید. مهم فقط این است که **دقیقاً همان رشته** را در برنامه هم وارد کنید.
 
@@ -846,4 +852,3 @@ logread -e mhrv-f -f
 کمک‌ها صرف هزینه‌های میزبانی، سرور `CI` اختصاصی، و ادامهٔ نگهداری پروژه می‌شود. ستاره دادن به ریپو هم یک راه رایگان برای نشان دادن اینه که پروژه ارزش ادامه دادن داره.
 
 </div>
-

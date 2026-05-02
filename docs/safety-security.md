@@ -32,3 +32,20 @@ If removal fails, rerun the command from an elevated shell (`sudo` / Administrat
 
 ## Android-specific note (Android 7+)
 Android allows each app to opt out of user-installed CAs. Browsers usually opt in; banking/chat apps often do not. This is normal Android behavior. Use proxy-only mode or split tunneling for those apps.
+
+## Readiness warnings
+
+The Desktop and Android readiness cards now distinguish startup blockers from
+operational warnings:
+
+- `ca.trust` means the selected mode uses local HTTPS interception. Install and
+  trust the generated CA before sending browser HTTPS traffic through the proxy.
+- `ca.android_app_trust` means Android app behavior can differ even after the
+  user CA is installed. If one app fails while a browser works, the app may not
+  trust user CAs.
+- These CA warnings do not block Start/Connect because full diagnostics require
+  platform trust-store checks and per-client behavior. Treat them as setup
+  checks before real browsing.
+
+Full tunnel mode does not require local MITM CA trust for end-to-end tunneled
+traffic, so these CA warnings are intentionally omitted there.

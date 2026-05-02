@@ -1,6 +1,7 @@
 ﻿package com.farnam.mhrvf.ui
 
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -44,6 +45,9 @@ import com.farnam.mhrvf.Native
 import com.farnam.mhrvf.ConnectionMode
 import com.farnam.mhrvf.NetworkDetect
 import com.farnam.mhrvf.R
+import com.farnam.mhrvf.ReadinessIds
+import com.farnam.mhrvf.ReadinessRepairAnchors
+import com.farnam.mhrvf.ReadinessRepairTargets
 import com.farnam.mhrvf.SplitMode
 import com.farnam.mhrvf.UiLang
 import com.farnam.mhrvf.VpnState
@@ -134,6 +138,448 @@ private fun SectionHint(text: String) {
     )
 }
 
+private data class AndroidReadinessItem(
+    val id: String,
+    val label: String,
+    val ok: Boolean,
+    val detail: String,
+    val blocksConnect: Boolean = true,
+)
+
+private data class AndroidReadinessRepair(
+    @StringRes val labelRes: Int,
+    val target: String,
+    val anchor: String?,
+    @StringRes val bodyRes: Int,
+)
+
+private fun isLanBoundHost(host: String): Boolean =
+    host.trim() == "0.0.0.0" || host.trim() == "::"
+
+private fun parseLanAllowlist(text: String): List<String> =
+    text.split('\n', ',', ';', ' ', '\t')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+
+private fun androidRepairForId(id: String): AndroidReadinessRepair? {
+    val target = ReadinessRepairTargets.targetForId(id) ?: return null
+    val anchor = ReadinessRepairAnchors.anchorForTarget(target)?.android
+    return when (id) {
+        ReadinessIds.ACCOUNT_GROUPS_ENABLED,
+        ReadinessIds.ACCOUNT_GROUPS_SCRIPT_IDS -> AndroidReadinessRepair(
+            labelRes = R.string.repair_account_groups_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_account_groups_body,
+        )
+        ReadinessIds.ACCOUNT_GROUPS_AUTH_KEY -> AndroidReadinessRepair(
+            labelRes = R.string.repair_account_auth_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_account_auth_body,
+        )
+        ReadinessIds.VERCEL_BASE_URL -> AndroidReadinessRepair(
+            labelRes = R.string.repair_serverless_base_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_serverless_base_body,
+        )
+        ReadinessIds.VERCEL_RELAY_PATH -> AndroidReadinessRepair(
+            labelRes = R.string.repair_serverless_path_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_serverless_path_body,
+        )
+        ReadinessIds.VERCEL_AUTH_KEY -> AndroidReadinessRepair(
+            labelRes = R.string.repair_serverless_auth_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_serverless_auth_body,
+        )
+        ReadinessIds.DIRECT_GOOGLE_IP -> AndroidReadinessRepair(
+            labelRes = R.string.repair_direct_ip_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_direct_ip_body,
+        )
+        ReadinessIds.DIRECT_FRONT_DOMAIN -> AndroidReadinessRepair(
+            labelRes = R.string.repair_direct_sni_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_direct_sni_body,
+        )
+        ReadinessIds.LOCAL_LISTENER,
+        ReadinessIds.LOCAL_PORTS -> AndroidReadinessRepair(
+            labelRes = R.string.repair_local_listener_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_local_listener_body,
+        )
+        ReadinessIds.CA_TRUST -> AndroidReadinessRepair(
+            labelRes = R.string.repair_ca_trust_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_ca_trust_body,
+        )
+        ReadinessIds.ANDROID_APP_CA_TRUST -> AndroidReadinessRepair(
+            labelRes = R.string.repair_android_app_ca_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_android_app_ca_body,
+        )
+        ReadinessIds.LAN_EXPOSURE -> AndroidReadinessRepair(
+            labelRes = R.string.repair_lan_exposure_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_lan_exposure_body,
+        )
+        ReadinessIds.LAN_TOKEN -> AndroidReadinessRepair(
+            labelRes = R.string.repair_lan_token_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_lan_token_body,
+        )
+        ReadinessIds.LAN_ALLOWLIST -> AndroidReadinessRepair(
+            labelRes = R.string.repair_lan_allowlist_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_lan_allowlist_body,
+        )
+        ReadinessIds.FULL_CODEFULL_DEPLOYMENT -> AndroidReadinessRepair(
+            labelRes = R.string.repair_full_codefull_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_full_codefull_body,
+        )
+        ReadinessIds.FULL_TUNNEL_NODE_URL -> AndroidReadinessRepair(
+            labelRes = R.string.repair_full_node_url_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_full_node_url_body,
+        )
+        ReadinessIds.FULL_TUNNEL_AUTH -> AndroidReadinessRepair(
+            labelRes = R.string.repair_full_auth_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_full_auth_body,
+        )
+        ReadinessIds.FULL_UDP_SUPPORT -> AndroidReadinessRepair(
+            labelRes = R.string.repair_full_udp_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_full_udp_body,
+        )
+        ReadinessIds.FULL_TUNNEL_HEALTH -> AndroidReadinessRepair(
+            labelRes = R.string.repair_full_health_label,
+            target = target,
+            anchor = anchor,
+            bodyRes = R.string.repair_full_health_body,
+        )
+        else -> null
+    }
+}
+
+private fun androidReadinessItems(cfg: MhrvConfig, caInstalled: Boolean): List<AndroidReadinessItem> {
+    val items = mutableListOf<AndroidReadinessItem>()
+    when (cfg.mode) {
+        Mode.APPS_SCRIPT, Mode.FULL -> {
+            items += AndroidReadinessItem(
+                id = ReadinessIds.ACCOUNT_GROUPS_SCRIPT_IDS,
+                label = "Deployment IDs",
+                ok = cfg.hasDeploymentId,
+                detail = if (cfg.hasDeploymentId) {
+                    "${cfg.appsScriptUrls.size} deployment ID(s)"
+                } else {
+                    "Add at least one Apps Script deployment URL or ID."
+                },
+            )
+            items += AndroidReadinessItem(
+                id = ReadinessIds.ACCOUNT_GROUPS_AUTH_KEY,
+                label = "AUTH_KEY",
+                ok = cfg.authKey.isNotBlank(),
+                detail = if (cfg.authKey.isNotBlank()) {
+                    "Configured for the primary Android-editable group."
+                } else {
+                    "Must match AUTH_KEY inside Code.gs or CodeFull.gs."
+                },
+            )
+        }
+        Mode.SERVERLESS_JSON -> {
+            items += AndroidReadinessItem(
+                id = ReadinessIds.VERCEL_BASE_URL,
+                label = "Serverless origin",
+                ok = cfg.serverlessBaseUrl.trim().startsWith("http://") ||
+                    cfg.serverlessBaseUrl.trim().startsWith("https://"),
+                detail = cfg.serverlessBaseUrl.ifBlank {
+                    "Paste the Vercel or Netlify site origin."
+                },
+            )
+            items += AndroidReadinessItem(
+                id = ReadinessIds.VERCEL_RELAY_PATH,
+                label = "Relay path",
+                ok = cfg.serverlessRelayPath.trim().startsWith("/"),
+                detail = cfg.serverlessRelayPath.ifBlank { "/api/api" },
+            )
+            items += AndroidReadinessItem(
+                id = ReadinessIds.VERCEL_AUTH_KEY,
+                label = "AUTH_KEY",
+                ok = cfg.serverlessAuthKey.isNotBlank(),
+                detail = if (cfg.serverlessAuthKey.isNotBlank()) {
+                    "Configured for the JSON relay."
+                } else {
+                    "Must match the serverless AUTH_KEY environment variable."
+                },
+            )
+        }
+        Mode.DIRECT -> {
+            items += AndroidReadinessItem(
+                id = ReadinessIds.DIRECT_GOOGLE_IP,
+                label = "Google edge IP",
+                ok = cfg.googleIp.isBlank() || cfg.googleIp.parseAsIpOrNull() != null,
+                detail = cfg.googleIp.ifBlank { "Auto-detected on connect when possible." },
+            )
+            items += AndroidReadinessItem(
+                id = ReadinessIds.DIRECT_FRONT_DOMAIN,
+                label = "Front SNI",
+                ok = cfg.frontDomain.isBlank() || cfg.frontDomain.parseAsIpOrNull() == null,
+                detail = cfg.frontDomain.ifBlank { "Defaults to www.google.com on connect." },
+            )
+        }
+    }
+    items += AndroidReadinessItem(
+        id = ReadinessIds.ANDROID_CONNECTION_MODE,
+        label = "Routing mode",
+        ok = true,
+        detail = when (cfg.connectionMode) {
+            ConnectionMode.VPN_TUN -> "VPN/TUN captures eligible apps automatically."
+            ConnectionMode.PROXY_ONLY -> "Proxy-only requires each app or Wi-Fi profile to opt in."
+        },
+        blocksConnect = false,
+    )
+    if (isLanBoundHost(cfg.listenHost)) {
+        val allowlistCount = cfg.lanAllowlist.map { it.trim() }.filter { it.isNotEmpty() }.distinct().size
+        val hasToken = cfg.lanToken.isNotBlank()
+        val hasAllowlist = allowlistCount > 0
+        items += AndroidReadinessItem(
+            id = ReadinessIds.LAN_EXPOSURE,
+            label = "LAN exposure",
+            ok = false,
+            detail = "Proxy is shared on ${cfg.listenHost}; local-network devices can reach it when Wi-Fi/firewall allows.",
+            blocksConnect = false,
+        )
+        items += AndroidReadinessItem(
+            id = ReadinessIds.LAN_TOKEN,
+            label = "LAN access guard",
+            ok = hasToken || hasAllowlist,
+            detail = when {
+                hasToken -> "HTTP/CONNECT token configured."
+                hasAllowlist -> "$allowlistCount allowlist entries configured."
+                else -> "Set a LAN token or allowed IPs before sharing HTTP/CONNECT on LAN."
+            },
+            blocksConnect = false,
+        )
+        if (cfg.socks5Port != null) {
+            items += AndroidReadinessItem(
+                id = ReadinessIds.LAN_ALLOWLIST,
+                label = "SOCKS5 LAN allowlist",
+                ok = hasAllowlist,
+                detail = if (hasAllowlist) {
+                    "$allowlistCount allowlist entries configured."
+                } else {
+                    "SOCKS5 cannot carry token headers; add allowed IPs before exposing it on LAN."
+                },
+                blocksConnect = false,
+            )
+        }
+    }
+    if (cfg.mode != Mode.FULL) {
+        items += AndroidReadinessItem(
+            id = ReadinessIds.CA_TRUST,
+            label = "Local CA trust",
+            ok = caInstalled,
+            detail = if (caInstalled) {
+                "Generated CA is present in the Android user credential store."
+            } else {
+                "Install and trust the generated CA before routing HTTPS clients."
+            },
+            blocksConnect = false,
+        )
+        items += AndroidReadinessItem(
+            id = ReadinessIds.ANDROID_APP_CA_TRUST,
+            label = "Android app CA trust",
+            ok = false,
+            detail = "Android 7+ apps may ignore user CAs unless they opt in; browsers and apps vary.",
+            blocksConnect = false,
+        )
+    } else {
+        items += AndroidReadinessItem(
+            id = ReadinessIds.FULL_CODEFULL_DEPLOYMENT,
+            label = "CodeFull deployment",
+            ok = false,
+            detail = "Verify each full-mode Apps Script deployment uses CodeFull.gs.",
+            blocksConnect = false,
+        )
+        items += AndroidReadinessItem(
+            id = ReadinessIds.FULL_TUNNEL_NODE_URL,
+            label = "Tunnel-node URL",
+            ok = false,
+            detail = "CodeFull.gs must point at the public tunnel-node origin.",
+            blocksConnect = false,
+        )
+        items += AndroidReadinessItem(
+            id = ReadinessIds.FULL_TUNNEL_AUTH,
+            label = "Tunnel auth",
+            ok = false,
+            detail = "TUNNEL_AUTH_KEY must match between CodeFull.gs and tunnel-node.",
+            blocksConnect = false,
+        )
+        items += AndroidReadinessItem(
+            id = ReadinessIds.FULL_UDP_SUPPORT,
+            label = "UDP/SOCKS5 path",
+            ok = cfg.socks5Port != null,
+            detail = if (cfg.socks5Port != null) {
+                "SOCKS5 listener configured for UDP-capable clients."
+            } else {
+                "Set a SOCKS5 port if apps need UDP ASSOCIATE in full mode."
+            },
+            blocksConnect = false,
+        )
+        items += AndroidReadinessItem(
+            id = ReadinessIds.FULL_TUNNEL_HEALTH,
+            label = "Tunnel health",
+            ok = false,
+            detail = "Check /healthz, tunnel-node logs, and public-IP verification.",
+            blocksConnect = false,
+        )
+    }
+    return items
+}
+
+private fun androidConnectBlockerId(cfg: MhrvConfig): String? =
+    androidReadinessItems(cfg, caInstalled = true).firstOrNull { !it.ok && it.blocksConnect }?.id
+
+@Composable
+private fun ModeReadinessCard(cfg: MhrvConfig, caInstalled: Boolean) {
+    val readiness = remember(cfg, caInstalled) { androidReadinessItems(cfg, caInstalled) }
+    val allBlockersReady = readiness.none { !it.ok && it.blocksConnect }
+    val hasWarnings = readiness.any { !it.ok && !it.blocksConnect }
+    var selectedRepair by remember { mutableStateOf<AndroidReadinessRepair?>(null) }
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Selected-mode readiness",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                AssistChip(
+                    onClick = {},
+                    enabled = false,
+                    label = { Text(if (!allBlockersReady) "blocked" else if (hasWarnings) "check" else "ready") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (allBlockersReady && !hasWarnings) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+                            contentDescription = null,
+                        )
+                    },
+                )
+            }
+            readiness.forEach { item ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Icon(
+                        imageVector = if (item.ok) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = if (item.ok) OkGreen else if (item.blocksConnect) ErrRed else MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "${item.id}: ${item.detail}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        val repair = androidRepairForId(item.id)
+                        if (!item.ok && repair != null) {
+                            TextButton(
+                                onClick = { selectedRepair = repair },
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                            ) {
+                                Text(stringResource(R.string.btn_fix))
+                            }
+                        }
+                    }
+                }
+            }
+            if (cfg.preservedAccountGroupsJson.isNotBlank()) {
+                HorizontalDivider()
+                Text(
+                    text = stringResource(R.string.warn_preserved_account_groups),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+        }
+    }
+    selectedRepair?.let { repair ->
+        AlertDialog(
+            onDismissRequest = { selectedRepair = null },
+            title = { Text(stringResource(R.string.repair_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stringResource(repair.labelRes),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(repair.bodyRes),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text = stringResource(R.string.repair_target, repair.target),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    repair.anchor?.let { anchor ->
+                        Text(
+                            text = stringResource(R.string.repair_anchor, anchor),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedRepair = null }) {
+                    Text(stringResource(R.string.btn_close))
+                }
+            },
+        )
+    }
+}
+
 /**
  * UI state returned by the Activity after the CA install flow finishes,
  * so the screen can show a matching snackbar. Kept as a sum type — a raw
@@ -181,6 +627,7 @@ fun HomeScreen(
 
     // CA install dialog visibility.
     var showInstallDialog by rememberSaveable { mutableStateOf(false) }
+    val caInstalled = remember(caOutcome) { CaInstall.isInstalled(ctx) }
 
     // One-shot auto update check on first composition. Silent if we're
     // already on the latest (no point nagging about a network miss or an
@@ -255,6 +702,8 @@ fun HomeScreen(
     fun ConnectActionButton() {
         SectionHint(stringResource(R.string.help_before_connect))
         val isVpnRunning by VpnState.isRunning.collectAsState()
+        val connectBlockerId = remember(cfg) { androidConnectBlockerId(cfg) }
+        val canConnect = connectBlockerId == null
         Button(
             onClick = {
                 if (isVpnRunning) {
@@ -282,11 +731,7 @@ fun HomeScreen(
                     }
                 }
             },
-            enabled = (isVpnRunning || when (cfg.mode) {
-                Mode.DIRECT -> true
-                Mode.SERVERLESS_JSON -> cfg.hasServerlessConfig
-                Mode.APPS_SCRIPT, Mode.FULL -> cfg.hasDeploymentId && cfg.authKey.isNotBlank()
-            }) && !transitioning,
+            enabled = (isVpnRunning || canConnect) && !transitioning,
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (isVpnRunning) ErrRed else OkGreen,
                 contentColor = androidx.compose.ui.graphics.Color.White,
@@ -300,9 +745,17 @@ fun HomeScreen(
                 when {
                     transitioning -> "..."
                     isVpnRunning -> stringResource(R.string.btn_disconnect)
-                    else -> stringResource(R.string.btn_connect)
+                    else -> stringResource(R.string.btn_save_and_connect)
                 },
                 style = MaterialTheme.typography.titleMedium,
+            )
+        }
+        if (!isVpnRunning && connectBlockerId != null) {
+            Text(
+                text = stringResource(R.string.connect_blocked_by, connectBlockerId),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 6.dp),
             )
         }
     }
@@ -402,6 +855,7 @@ fun HomeScreen(
                 onChange = { persist(cfg.copy(mode = it)) },
             )
             ModeOverviewCard(mode = cfg.mode, connectionMode = cfg.connectionMode)
+            ModeReadinessCard(cfg, caInstalled)
             ConnectActionButton()
 
             Spacer(Modifier.height(4.dp))
@@ -1304,6 +1758,47 @@ private fun AdvancedSettings(
                 onCheckedChange = { enabled ->
                     onChange(cfg.copy(listenHost = if (enabled) "0.0.0.0" else "127.0.0.1"))
                 },
+            )
+        }
+
+        OutlinedTextField(
+            value = cfg.lanToken,
+            onValueChange = { onChange(cfg.copy(lanToken = it)) },
+            label = { Text(stringResource(R.string.adv_lan_token)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            supportingText = {
+                Text(stringResource(R.string.adv_lan_token_help))
+            },
+        )
+
+        OutlinedTextField(
+            value = cfg.lanAllowlist.joinToString("\n"),
+            onValueChange = { onChange(cfg.copy(lanAllowlist = parseLanAllowlist(it))) },
+            label = { Text(stringResource(R.string.adv_lan_allowlist)) },
+            minLines = 2,
+            maxLines = 4,
+            modifier = Modifier.fillMaxWidth(),
+            supportingText = {
+                Text(stringResource(R.string.adv_lan_allowlist_help))
+            },
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.adv_youtube_via_relay), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    stringResource(R.string.adv_youtube_via_relay_help),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = cfg.youtubeViaRelay,
+                onCheckedChange = { onChange(cfg.copy(youtubeViaRelay = it)) },
             )
         }
 

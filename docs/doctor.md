@@ -2,11 +2,20 @@
 
 `mhrv-f doctor` checks the common first-run and daily-use failure modes and
 prints actionable fixes. It is available in the CLI and in the desktop UI.
+The shared ID/severity/repair contract is generated in
+[`docs/readiness-matrix.md`](readiness-matrix.md).
 
 ## Run It
 
 ```bash
 ./mhrv-f doctor
+```
+
+For full mode, add the public tunnel-node origin when you want Doctor to probe
+the deployed node before starting the tunnel:
+
+```bash
+./mhrv-f doctor --tunnel-node-url https://tunnel.example.com
 ```
 
 In the desktop UI, click **Doctor** and read the **Recent log** panel. Use
@@ -33,6 +42,9 @@ In the desktop UI, click **Doctor** and read the **Recent log** panel. Use
   and endpoint shape in `vercel_edge` mode.
 - **MITM CA readiness**: CA file generation and OS trust status for modes that
   decrypt HTTPS locally.
+- **Full-mode tunnel checks**: CodeFull deployment, tunnel-node URL/auth
+  reminders, UDP/SOCKS expectations, and optional live `/health/details` probe
+  when `--tunnel-node-url` is provided.
 - **Relay probe**: the same JSON HTTP probe as `mhrv-f test` for `apps_script`
   and `vercel_edge`.
 
@@ -87,3 +99,16 @@ front of the function. The native client expects JSON.
 Doctor does not use `mhrv-f test` as proof for `full` mode. Verify full mode by
 starting the tunnel, browsing through it, and checking that an IP-check page
 shows the tunnel-node public IP.
+
+Before starting, run:
+
+```bash
+./mhrv-f doctor --tunnel-node-url https://tunnel.example.com
+```
+
+The flag accepts a bare host or full URL, normalizes it to `/health/details`,
+and verifies that the node advertises `mhrv-full-tunnel`, batch, UDP, and udpgw
+capabilities. A successful probe proves the node is reachable and versioned
+correctly, but it still cannot prove that deployed `CodeFull.gs` contains the
+same `TUNNEL_SERVER_URL` and `TUNNEL_AUTH_KEY`; keep those warnings as a final
+manual deployment check.

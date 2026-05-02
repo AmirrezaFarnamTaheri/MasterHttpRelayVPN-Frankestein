@@ -30,6 +30,11 @@ private fun stringList(arr: JSONArray?): List<String> =
         }
     }?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
 
+private fun optionalPositiveInt(obj: JSONObject, key: String, defaultValue: Int): Int? {
+    if (obj.has(key) && obj.isNull(key)) return null
+    return obj.optInt(key, defaultValue).takeIf { it > 0 }
+}
+
 private fun scriptIdsFromValue(value: Any?): List<String> =
     when (value) {
         is JSONArray -> stringList(value)
@@ -108,6 +113,7 @@ private fun projectAccountGroups(obj: JSONObject): AccountGroupsProjection {
  *   - multiple deployment IDs (round-robin)
  *   - an SNI rotation pool
  *   - log level / verify_ssl / parallel_relay knobs
+ *   - LAN sharing guardrails (`lan_token` and `lan_allowlist`)
  * Anything else gets phone-appropriate defaults.
  */
 /**
@@ -193,12 +199,22 @@ data class MhrvConfig(
     val coalesceMaxMs: Int = 1000,
     val upstreamSocks5: String = "",
     /**
+     * Route YouTube HTML/API through Apps Script instead of SNI rewrite.
+     * Useful for restricted-mode/SafeSearch-on-SNI failures, but costs
+     * Apps Script quota and is slower for video-heavy pages.
+     */
+    val youtubeViaRelay: Boolean = false,
+    /**
      * User-configured hostnames that bypass Apps Script relay entirely
      * and use plain-TCP passthrough (via upstreamSocks5 if set). Entries
      * are exact hostnames, leading-dot suffixes, or "*.example.com" aliases;
      * Rust owns the semantics.
      */
     val passthroughHosts: List<String> = emptyList(),
+    /** Optional HTTP/CONNECT guard when listeners are shared on LAN. */
+    val lanToken: String = "",
+    /** IP/CIDR allowlist for LAN clients; required for LAN-exposed SOCKS5. */
+    val lanAllowlist: List<String> = emptyList(),
     /** Drop SOCKS5 UDP/443 in full mode so QUIC clients fall back to TCP. */
     val blockQuic: Boolean = false,
     /**
@@ -265,8 +281,22 @@ data class MhrvConfig(
             if (upstreamSocks5.isNotBlank()) {
                 put("upstream_socks5", upstreamSocks5.trim())
             }
+            if (youtubeViaRelay) {
+                put("youtube_via_relay", true)
+            }
             if (passthroughHosts.isNotEmpty()) {
                 put("passthrough_hosts", JSONArray().apply { passthroughHosts.forEach { put(it) } })
+            }
+            val cleanLanToken = lanToken.trim()
+            if (cleanLanToken.isNotBlank()) {
+                put("lan_token", cleanLanToken)
+            }
+            val cleanLanAllowlist = lanAllowlist
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+            if (cleanLanAllowlist.isNotEmpty()) {
+                put("lan_allowlist", JSONArray().apply { cleanLanAllowlist.forEach { put(it) } })
             }
             if (blockQuic) put("block_quic", true)
             if (tunnelDoh) put("tunnel_doh", true)
@@ -337,7 +367,7 @@ object ConfigStore {
                 },
                 listenHost = obj.optString("listen_host", "127.0.0.1"),
                 listenPort = obj.optInt("listen_port", 8080),
-                socks5Port = obj.optInt("socks5_port", 1081).takeIf { it > 0 },
+                socks5Port = optionalPositiveInt(obj, "socks5_port", 1081),
                 appsScriptUrls = accountGroups.urls,
                 authKey = accountGroups.authKey,
                 preservedAccountGroupsJson = accountGroups.preservedJson,
@@ -354,9 +384,12 @@ object ConfigStore {
                 coalesceStepMs = obj.optInt("coalesce_step_ms", 40),
                 coalesceMaxMs = obj.optInt("coalesce_max_ms", 1000),
                 upstreamSocks5 = obj.optString("upstream_socks5", ""),
+                youtubeViaRelay = obj.optBoolean("youtube_via_relay", false),
                 passthroughHosts = obj.optJSONArray("passthrough_hosts")?.let { arr ->
                     buildList { for (i in 0 until arr.length()) add(arr.optString(i)) }
                 }?.filter { it.isNotBlank() }.orEmpty(),
+                lanToken = obj.optString("lan_token", ""),
+                lanAllowlist = stringList(obj.optJSONArray("lan_allowlist")),
                 blockQuic = obj.optBoolean("block_quic", false),
                 tunnelDoh = obj.optBoolean("tunnel_doh", true),
                 bypassDohHosts = obj.optJSONArray("bypass_doh_hosts")?.let { arr ->
@@ -413,6 +446,11 @@ object ConfigStore {
                 put("verify_tls", true)
             })
         }
+        if (cfg.listenHost != defaults.listenHost) obj.put("listen_host", cfg.listenHost)
+        if (cfg.listenPort != defaults.listenPort) obj.put("listen_port", cfg.listenPort)
+        if (cfg.socks5Port != defaults.socks5Port) {
+            cfg.socks5Port?.let { obj.put("socks5_port", it) } ?: obj.put("socks5_port", JSONObject.NULL)
+        }
         if (cfg.googleIp != defaults.googleIp) obj.put("google_ip", cfg.googleIp)
         if (cfg.frontDomain != defaults.frontDomain) obj.put("front_domain", cfg.frontDomain)
         if (cfg.sniHosts.isNotEmpty()) obj.put("sni_hosts", JSONArray().apply { cfg.sniHosts.forEach { put(it) } })
@@ -422,7 +460,11 @@ object ConfigStore {
         if (cfg.coalesceStepMs != defaults.coalesceStepMs) obj.put("coalesce_step_ms", cfg.coalesceStepMs)
         if (cfg.coalesceMaxMs != defaults.coalesceMaxMs) obj.put("coalesce_max_ms", cfg.coalesceMaxMs)
         if (cfg.upstreamSocks5.isNotBlank()) obj.put("upstream_socks5", cfg.upstreamSocks5)
+        if (cfg.youtubeViaRelay != defaults.youtubeViaRelay) obj.put("youtube_via_relay", cfg.youtubeViaRelay)
         if (cfg.passthroughHosts.isNotEmpty()) obj.put("passthrough_hosts", JSONArray().apply { cfg.passthroughHosts.forEach { put(it) } })
+        if (cfg.lanToken.isNotBlank()) obj.put("lan_token", cfg.lanToken.trim())
+        val cleanLanAllowlist = cfg.lanAllowlist.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (cleanLanAllowlist.isNotEmpty()) obj.put("lan_allowlist", JSONArray().apply { cleanLanAllowlist.forEach { put(it) } })
         if (cfg.blockQuic) obj.put("block_quic", true)
         if (cfg.tunnelDoh) obj.put("tunnel_doh", true)
         if (cfg.bypassDohHosts.isNotEmpty()) obj.put("bypass_doh_hosts", JSONArray().apply { cfg.bypassDohHosts.forEach { put(it) } })
@@ -476,7 +518,7 @@ object ConfigStore {
             },
             listenHost = obj.optString("listen_host", "127.0.0.1"),
             listenPort = obj.optInt("listen_port", 8080),
-            socks5Port = obj.optInt("socks5_port", 1081).takeIf { it > 0 },
+            socks5Port = optionalPositiveInt(obj, "socks5_port", 1081),
             appsScriptUrls = accountGroups.urls,
             authKey = accountGroups.authKey,
             preservedAccountGroupsJson = accountGroups.preservedJson,
@@ -493,9 +535,12 @@ object ConfigStore {
             coalesceStepMs = obj.optInt("coalesce_step_ms", 40),
             coalesceMaxMs = obj.optInt("coalesce_max_ms", 1000),
             upstreamSocks5 = obj.optString("upstream_socks5", ""),
+            youtubeViaRelay = obj.optBoolean("youtube_via_relay", false),
             passthroughHosts = obj.optJSONArray("passthrough_hosts")?.let { arr ->
                 buildList { for (i in 0 until arr.length()) add(arr.optString(i)) }
             }?.filter { it.isNotBlank() }.orEmpty(),
+            lanToken = obj.optString("lan_token", ""),
+            lanAllowlist = stringList(obj.optJSONArray("lan_allowlist")),
             blockQuic = obj.optBoolean("block_quic", false),
             tunnelDoh = obj.optBoolean("tunnel_doh", true),
             bypassDohHosts = obj.optJSONArray("bypass_doh_hosts")?.let { arr ->

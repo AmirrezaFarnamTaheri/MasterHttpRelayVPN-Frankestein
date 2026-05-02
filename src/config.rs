@@ -562,126 +562,58 @@ impl Config {
 
     fn validate_config_version(&self) -> Result<(), ConfigError> {
         if self.config_version > CURRENT_CONFIG_VERSION {
-            return Err(ConfigError::Invalid(format!(
-                "config_version {} is newer than this binary supports (max {}). Please update mhrv-f.",
-                self.config_version, CURRENT_CONFIG_VERSION
+            return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                crate::readiness::CONFIG_VERSION,
+                "Config version",
+                format!(
+                    "config_version {} is newer than this binary supports (max {}). Please update mhrv-f.",
+                    self.config_version, CURRENT_CONFIG_VERSION
+                ),
             )));
         }
         Ok(())
     }
 
     fn validate(&self) -> Result<(), ConfigError> {
-        let mode = self.mode_kind()?;
-        if mode == Mode::AppsScript || mode == Mode::Full {
-            let Some(groups) = &self.account_groups else {
-                return Err(ConfigError::Invalid(
-                    "account_groups is required in apps_script/full mode".into(),
-                ));
-            };
-            if groups.is_empty() {
-                return Err(ConfigError::Invalid("account_groups is empty".into()));
-            }
-            let mut any_enabled = false;
-            for (idx, g) in groups.iter().enumerate() {
-                if !g.enabled {
-                    continue;
-                }
-                any_enabled = true;
-                if g.auth_key.trim().is_empty() {
-                    return Err(ConfigError::Invalid(format!(
-                        "account_groups[{}].auth_key is required",
-                        idx
-                    )));
-                }
-                let ids = g.script_ids.clone().into_vec();
-                if ids.is_empty() {
-                    return Err(ConfigError::Invalid(format!(
-                        "account_groups[{}].script_ids is required",
-                        idx
-                    )));
-                }
-                for id in &ids {
-                    if id.is_empty() {
-                        return Err(ConfigError::Invalid(format!(
-                            "account_groups[{}].script_ids contains an empty id",
-                            idx
-                        )));
-                    }
-                }
-            }
-            if !any_enabled {
-                return Err(ConfigError::Invalid(
-                    "all account_groups are disabled; enable at least one".into(),
-                ));
-            }
-        }
-        if mode == Mode::VercelEdge {
-            let base = self.vercel.base_url.trim();
-            if base.is_empty() {
-                return Err(ConfigError::Invalid(
-                    "vercel.base_url is required in vercel_edge mode".into(),
-                ));
-            }
-            let parsed = url::Url::parse(base).map_err(|e| {
-                ConfigError::Invalid(format!("vercel.base_url is not a valid URL: {e}"))
-            })?;
-            if !matches!(parsed.scheme(), "https" | "http") {
-                return Err(ConfigError::Invalid(
-                    "vercel.base_url must start with https:// or http://".into(),
-                ));
-            }
-            if parsed.host_str().unwrap_or("").trim().is_empty() {
-                return Err(ConfigError::Invalid(
-                    "vercel.base_url must include a hostname".into(),
-                ));
-            }
-            let auth = self.vercel.auth_key.trim();
-            if auth.is_empty()
-                || auth.eq_ignore_ascii_case("change-me")
-                || auth.eq_ignore_ascii_case("your_auth_key")
-                || auth.eq_ignore_ascii_case("your-auth-key")
-                || auth.eq_ignore_ascii_case("same_value_as_vercel_auth_key")
-            {
-                return Err(ConfigError::Invalid(
-                    "vercel.auth_key must be set to a non-placeholder AUTH_KEY".into(),
-                ));
-            }
-            if self.vercel.relay_path.trim().is_empty()
-                || !self.vercel.relay_path.trim().starts_with('/')
-            {
-                return Err(ConfigError::Invalid(
-                    "vercel.relay_path must start with '/' (default: /api/api)".into(),
-                ));
-            }
-            if self.vercel.max_body_bytes < 1024 {
-                return Err(ConfigError::Invalid(
-                    "vercel.max_body_bytes must be at least 1024".into(),
-                ));
-            }
+        self.mode_kind()?;
+        let readiness = crate::readiness::mode_readiness(self);
+        if let Some(blocker) = crate::readiness::first_blocker(&readiness) {
+            return Err(ConfigError::Invalid(crate::readiness::validation_message(
+                blocker,
+            )));
         }
         if self.scan_batch_size == 0 {
-            return Err(ConfigError::Invalid(
-                "scan_batch_size must be greater than 0".into(),
-            ));
+            return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                crate::readiness::SCAN_BATCH_SIZE,
+                "Scan batch size",
+                "scan_batch_size must be greater than 0",
+            )));
         }
         if self.socks5_port == Some(self.listen_port) {
-            return Err(ConfigError::Invalid(format!(
-                "listen_port and socks5_port must differ on the same host (both set to {} on {}). Change one of them in config.json.",
-                self.listen_port, self.listen_host
+            return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                crate::readiness::LOCAL_PORTS,
+                "Local ports",
+                format!(
+                    "listen_port and socks5_port must differ on the same host (both set to {} on {}).",
+                    self.listen_port, self.listen_host
+                ),
             )));
         }
         if let Some(qps) = self.relay_rate_limit_qps {
             if !(qps.is_finite()) || qps <= 0.0 {
-                return Err(ConfigError::Invalid(
-                    "relay_rate_limit_qps must be a positive finite number".into(),
-                ));
+                return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                    crate::readiness::RELAY_RATE_LIMIT_QPS,
+                    "Relay rate limit",
+                    "relay_rate_limit_qps must be a positive finite number",
+                )));
             }
         }
         for (idx, o) in self.domain_overrides.iter().enumerate() {
             if o.host.trim().trim_end_matches('.').is_empty() {
-                return Err(ConfigError::Invalid(format!(
-                    "domain_overrides[{}].host is required",
-                    idx
+                return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                    crate::readiness::DOMAIN_OVERRIDES_HOST,
+                    "Domain override host",
+                    format!("domain_overrides[{idx}].host is required"),
                 )));
             }
             if let Some(route) = o.force_route.as_deref() {
@@ -691,49 +623,67 @@ impl Config {
                     "direct" | "sni_rewrite" | "relay" | "full_tunnel"
                 );
                 if !ok {
-                    return Err(ConfigError::Invalid(format!(
-                        "domain_overrides[{}].force_route must be one of: direct, sni_rewrite, relay, full_tunnel",
-                        idx
+                    return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                        crate::readiness::DOMAIN_OVERRIDES_FORCE_ROUTE,
+                        "Domain override route",
+                        format!(
+                            "domain_overrides[{idx}].force_route must be one of: direct, sni_rewrite, relay, full_tunnel"
+                        ),
                     )));
                 }
             }
         }
         for (i, group) in self.fronting_groups.iter().enumerate() {
             if group.name.trim().is_empty() {
-                return Err(ConfigError::Invalid(format!(
-                    "fronting_groups[{}]: name is empty",
-                    i
+                return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                    crate::readiness::FRONTING_GROUPS_NAME,
+                    "Fronting group name",
+                    format!("fronting_groups[{i}]: name is empty"),
                 )));
             }
             if group.ip.trim().is_empty() {
-                return Err(ConfigError::Invalid(format!(
-                    "fronting_groups[{}] ('{}'): ip is empty",
-                    i, group.name
+                return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                    crate::readiness::FRONTING_GROUPS_IP,
+                    "Fronting group IP",
+                    format!("fronting_groups[{i}] ('{}'): ip is empty", group.name),
                 )));
             }
             if group.sni.trim().is_empty() {
-                return Err(ConfigError::Invalid(format!(
-                    "fronting_groups[{}] ('{}'): sni is empty",
-                    i, group.name
+                return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                    crate::readiness::FRONTING_GROUPS_SNI,
+                    "Fronting group SNI",
+                    format!("fronting_groups[{i}] ('{}'): sni is empty", group.name),
                 )));
             }
             if let Err(e) = ServerName::try_from(group.sni.clone()) {
-                return Err(ConfigError::Invalid(format!(
-                    "fronting_groups[{}] ('{}'): invalid sni '{}': {}",
-                    i, group.name, group.sni, e
+                return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                    crate::readiness::FRONTING_GROUPS_SNI,
+                    "Fronting group SNI",
+                    format!(
+                        "fronting_groups[{i}] ('{}'): invalid sni '{}': {e}",
+                        group.name, group.sni
+                    ),
                 )));
             }
             if group.domains.is_empty() {
-                return Err(ConfigError::Invalid(format!(
-                    "fronting_groups[{}] ('{}'): domains list is empty",
-                    i, group.name
+                return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                    crate::readiness::FRONTING_GROUPS_DOMAINS,
+                    "Fronting group domains",
+                    format!(
+                        "fronting_groups[{i}] ('{}'): domains list is empty",
+                        group.name
+                    ),
                 )));
             }
             for domain in &group.domains {
                 if domain.trim().is_empty() {
-                    return Err(ConfigError::Invalid(format!(
-                        "fronting_groups[{}] ('{}'): empty domain entry",
-                        i, group.name
+                    return Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                        crate::readiness::FRONTING_GROUPS_DOMAINS,
+                        "Fronting group domains",
+                        format!(
+                            "fronting_groups[{i}] ('{}'): empty domain entry",
+                            group.name
+                        ),
                     )));
                 }
             }
@@ -747,9 +697,12 @@ impl Config {
             "vercel_edge" => Ok(Mode::VercelEdge),
             "direct" | "google_only" => Ok(Mode::Direct),
             "full" => Ok(Mode::Full),
-            other => Err(ConfigError::Invalid(format!(
-                "unknown mode '{}' (expected 'apps_script', 'vercel_edge', 'direct', or 'full')",
-                other
+            other => Err(ConfigError::Invalid(crate::readiness::validation_failure(
+                crate::readiness::CONFIG_MODE,
+                "Mode",
+                format!(
+                    "unknown mode '{other}' (expected 'apps_script', 'vercel_edge', 'direct', or 'full')"
+                ),
             ))),
         }
     }
@@ -964,13 +917,69 @@ fn migrate_legacy_android_account_groups(value: &mut Value) {
 mod tests {
     use super::*;
 
+    fn assert_invalid_id(json: &str, id: crate::readiness::ReadinessId, target: &str) {
+        let cfg: Config = serde_json::from_str(json).expect("raw config should deserialize");
+        let err = cfg.validate().expect_err("config should fail validation");
+        let msg = format!("{err}");
+        assert!(msg.contains(id), "expected id {id} in {msg}");
+        assert!(msg.contains(target), "expected target {target} in {msg}");
+    }
+
+    fn assert_example_config_loads(name: &str, json: &str, expected_mode: Mode) {
+        let cfg = Config::from_json_str(json)
+            .unwrap_or_else(|err| panic!("{name} must load through Config::from_json_str: {err}"));
+        assert_eq!(
+            cfg.mode_kind()
+                .unwrap_or_else(|err| panic!("{name} must have a known mode: {err}")),
+            expected_mode,
+            "{name} mode mismatch"
+        );
+    }
+
+    #[test]
+    fn bundled_example_configs_load_and_validate() {
+        let examples = [
+            (
+                "config.example.json",
+                include_str!("../config.example.json"),
+                Mode::AppsScript,
+            ),
+            (
+                "config.direct.example.json",
+                include_str!("../config.direct.example.json"),
+                Mode::Direct,
+            ),
+            (
+                "config.fronting-groups.example.json",
+                include_str!("../config.fronting-groups.example.json"),
+                Mode::Direct,
+            ),
+            (
+                "config.full.example.json",
+                include_str!("../config.full.example.json"),
+                Mode::Full,
+            ),
+            (
+                "config.google-only.example.json",
+                include_str!("../config.google-only.example.json"),
+                Mode::Direct,
+            ),
+        ];
+
+        for (name, json, mode) in examples {
+            assert_example_config_loads(name, json, mode);
+        }
+    }
+
     #[test]
     fn apps_script_requires_account_groups() {
         let s = r#"{
             "mode": "apps_script"
         }"#;
         let cfg: Config = serde_json::from_str(s).unwrap();
-        assert!(cfg.validate().is_err());
+        let err = cfg.validate().expect_err("missing account group must fail");
+        assert!(format!("{err}").contains(crate::readiness::ACCOUNT_GROUPS_ENABLED));
+        assert!(format!("{err}").contains("Next:"));
     }
 
     #[test]
@@ -1053,7 +1062,36 @@ mod tests {
             }]
         }"#;
         let cfg: Config = serde_json::from_str(s).unwrap();
-        assert!(cfg.validate().is_err());
+        let err = cfg.validate().expect_err("unknown mode must fail");
+        assert!(format!("{err}").contains(crate::readiness::CONFIG_MODE));
+        assert!(format!("{err}").contains("setup.mode"));
+    }
+
+    #[test]
+    fn validation_uses_readiness_id_for_serverless_auth() {
+        let s = r#"{
+            "mode": "vercel_edge",
+            "vercel": {
+                "base_url": "https://example.vercel.app",
+                "relay_path": "/api/api",
+                "auth_key": "change-me"
+            }
+        }"#;
+        let err = Config::from_json_str(s).expect_err("placeholder auth key must fail");
+        assert!(format!("{err}").contains(crate::readiness::VERCEL_AUTH_KEY));
+        assert!(format!("{err}").contains("setup.serverless.auth_key"));
+    }
+
+    #[test]
+    fn validation_uses_readiness_id_for_direct_bad_ip() {
+        let s = r#"{
+            "mode": "direct",
+            "google_ip": "not-an-ip",
+            "front_domain": "www.google.com"
+        }"#;
+        let err = Config::from_json_str(s).expect_err("bad direct IP must fail");
+        assert!(format!("{err}").contains(crate::readiness::DIRECT_GOOGLE_IP));
+        assert!(format!("{err}").contains("setup.direct.google_ip"));
     }
 
     #[test]
@@ -1143,6 +1181,7 @@ mod tests {
         let cfg: Config = serde_json::from_str(s).unwrap();
         let err = cfg.validate().expect_err("invalid sni must fail validate");
         assert!(format!("{}", err).contains("invalid sni"));
+        assert!(format!("{err}").contains(crate::readiness::FRONTING_GROUPS_SNI));
     }
 
     #[test]
@@ -1177,8 +1216,11 @@ mod tests {
             }],
             "scan_batch_size": 0
         }"#;
-        let cfg: Config = serde_json::from_str(s).unwrap();
-        assert!(cfg.validate().is_err());
+        assert_invalid_id(
+            s,
+            crate::readiness::SCAN_BATCH_SIZE,
+            "advanced.scan.batch_size",
+        );
     }
 
     #[test]
@@ -1192,8 +1234,65 @@ mod tests {
             "listen_port": 8085,
             "socks5_port": 8085
         }"#;
-        let cfg: Config = serde_json::from_str(s).unwrap();
-        assert!(cfg.validate().is_err());
+        assert_invalid_id(
+            s,
+            crate::readiness::LOCAL_PORTS,
+            "setup.local_listener.ports",
+        );
+    }
+
+    #[test]
+    fn validation_uses_structured_ids_for_remaining_deep_checks() {
+        assert_invalid_id(
+            r#"{
+                "mode": "direct",
+                "relay_rate_limit_qps": -1.0
+            }"#,
+            crate::readiness::RELAY_RATE_LIMIT_QPS,
+            "advanced.relay_rate_limit_qps",
+        );
+        assert_invalid_id(
+            r#"{
+                "mode": "direct",
+                "domain_overrides": [{"host": "", "force_route": "relay"}]
+            }"#,
+            crate::readiness::DOMAIN_OVERRIDES_HOST,
+            "advanced.domain_overrides.host",
+        );
+        assert_invalid_id(
+            r#"{
+                "mode": "direct",
+                "domain_overrides": [{"host": "example.com", "force_route": "bad"}]
+            }"#,
+            crate::readiness::DOMAIN_OVERRIDES_FORCE_ROUTE,
+            "advanced.domain_overrides.force_route",
+        );
+        assert_invalid_id(
+            r#"{
+                "mode": "direct",
+                "fronting_groups": [{
+                    "name": "edge",
+                    "ip": "",
+                    "sni": "react.dev",
+                    "domains": ["example.com"]
+                }]
+            }"#,
+            crate::readiness::FRONTING_GROUPS_IP,
+            "advanced.fronting_groups.ip",
+        );
+        assert_invalid_id(
+            r#"{
+                "mode": "direct",
+                "fronting_groups": [{
+                    "name": "edge",
+                    "ip": "76.76.21.21",
+                    "sni": "react.dev",
+                    "domains": []
+                }]
+            }"#,
+            crate::readiness::FRONTING_GROUPS_DOMAINS,
+            "advanced.fronting_groups.domains",
+        );
     }
 
     #[test]

@@ -15,6 +15,18 @@
 const AUTH_KEY = "CHANGE_ME_TO_A_STRONG_SECRET";
 const TUNNEL_SERVER_URL = "https://YOUR_TUNNEL_NODE_URL";
 const TUNNEL_AUTH_KEY = "YOUR_TUNNEL_AUTH_KEY";
+const HELPER_KIND = "apps_script_full";
+const HELPER_VERSION = "2026-05-02.batch20";
+const HELPER_PROTOCOL = "mhrv-f.apps-script.v1";
+const HELPER_FEATURES = [
+  "single",
+  "batch",
+  "full_tunnel",
+  "tunnel_batch",
+  "edge_dns_cache",
+  "safe_fetchall_fallback",
+  "header_privacy",
+];
 
 // Set true only while debugging setup/auth mismatches. In normal production,
 // unauthorized or malformed probe-shaped requests get a harmless HTML decoy
@@ -116,6 +128,9 @@ const SKIP_HEADERS = {
   "x-proxyuser-ip": 1,
   "remote-addr": 1,
 };
+
+// If fetchAll fails as a whole, retry only methods that are safe to replay.
+const SAFE_REPLAY_METHODS = { GET: 1, HEAD: 1, OPTIONS: 1 };
 
 function _trim(s) {
   return String(s).replace(/^\s+|\s+$/g, "");
@@ -396,30 +411,70 @@ function _doBatch(items) {
   var errorMap = {};
   for (var i = 0; i < items.length; i++) {
     var item = items[i];
+    if (!item || typeof item !== "object") {
+      errorMap[i] = "bad item";
+      continue;
+    }
     if (!item.u || typeof item.u !== "string" || !item.u.match(/^https?:\/\//i)) {
       errorMap[i] = "bad url";
       continue;
     }
-    var opts = _buildOpts(item);
-    opts.url = item.u;
-    fetchArgs.push({ _i: i, _o: opts });
+    try {
+      var opts = _buildOpts(item);
+      opts.url = item.u;
+      fetchArgs.push({
+        _i: i,
+        _m: (item.m || "GET").toUpperCase(),
+        _o: opts,
+      });
+    } catch (err) {
+      errorMap[i] = String(err);
+    }
   }
-  var responses = [];
+  var responseMap = {};
   if (fetchArgs.length > 0) {
-    responses = UrlFetchApp.fetchAll(fetchArgs.map(function(x) { return x._o; }));
+    try {
+      var responses = UrlFetchApp.fetchAll(fetchArgs.map(function(x) { return x._o; }));
+      for (var a = 0; a < fetchArgs.length; a++) {
+        responseMap[fetchArgs[a]._i] = responses[a];
+      }
+    } catch (err) {
+      for (var j = 0; j < fetchArgs.length; j++) {
+        try {
+          if (!SAFE_REPLAY_METHODS[fetchArgs[j]._m]) {
+            errorMap[fetchArgs[j]._i] = "batch fetchAll failed; unsafe method not replayed";
+            continue;
+          }
+          var fallbackReq = fetchArgs[j]._o;
+          var fallbackUrl = fallbackReq.url;
+          var fallbackOpts = {};
+          for (var key in fallbackReq) {
+            if (fallbackReq.hasOwnProperty(key) && key !== "url") {
+              fallbackOpts[key] = fallbackReq[key];
+            }
+          }
+          responseMap[fetchArgs[j]._i] = UrlFetchApp.fetch(fallbackUrl, fallbackOpts);
+        } catch (singleErr) {
+          errorMap[fetchArgs[j]._i] = String(singleErr);
+        }
+      }
+    }
   }
   var results = [];
-  var rIdx = 0;
   for (var i = 0; i < items.length; i++) {
     if (errorMap.hasOwnProperty(i)) {
       results.push({ e: errorMap[i] });
     } else {
-      var resp = responses[rIdx++];
-      results.push({
-        s: resp.getResponseCode(),
-        h: _respHeaders(resp),
-        b: Utilities.base64Encode(resp.getContent()),
-      });
+      var resp = responseMap[i];
+      if (!resp) {
+        results.push({ e: "fetch failed" });
+      } else {
+        results.push({
+          s: resp.getResponseCode(),
+          h: _respHeaders(resp),
+          b: Utilities.base64Encode(resp.getContent()),
+        });
+      }
     }
   }
   return _json({ q: results });
@@ -461,9 +516,21 @@ function _respHeaders(resp) {
 }
 
 function doGet(e) {
+  if (e && e.parameter && e.parameter.compat === "1") {
+    return _json(_compatInfo());
+  }
   return ContentService
     .createTextOutput(DECOY_HTML)
     .setMimeType(ContentService.MimeType.HTML);
+}
+
+function _compatInfo() {
+  return {
+    kind: HELPER_KIND,
+    version: HELPER_VERSION,
+    protocol: HELPER_PROTOCOL,
+    features: HELPER_FEATURES,
+  };
 }
 
 function _json(obj) {

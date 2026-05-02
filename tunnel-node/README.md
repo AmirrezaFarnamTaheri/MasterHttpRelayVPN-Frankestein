@@ -132,6 +132,53 @@ instead of `TUNNEL_AUTH_KEY`, startup logs call it out and the server exits.
 
 ### Health check: `GET /health` or `GET /healthz` → `ok`
 
+For readiness tooling and operator dashboards, `GET /health/details` returns a
+small JSON capability document:
+
+```json
+{
+  "status": "ok",
+  "service": "mhrv-f tunnel-node",
+  "version": "0.1.0",
+  "protocol": "mhrv-full-tunnel",
+  "supports_batch": true,
+  "supports_udp": true,
+  "supports_udpgw": true,
+  "auth": "TUNNEL_AUTH_KEY"
+}
+```
+
+From the client machine, Doctor can probe the same document:
+
+```bash
+mhrv-f doctor --tunnel-node-url https://your-tunnel-node.example
+```
+
+The flag accepts the public origin or a URL and normalizes it to
+`/health/details`. Passing this check means the node is reachable, speaks the
+expected full-tunnel capability contract, and advertises batch/UDP/udpgw
+support. It does not prove that deployed `CodeFull.gs` has the same
+`TUNNEL_SERVER_URL` and `TUNNEL_AUTH_KEY`, so keep those deployment checks in
+the readiness card.
+
+## Client Readiness Checklist
+
+The client readiness card cannot read this service's environment variables or
+the constants inside a deployed Apps Script project. It therefore shows
+full-mode items as checks instead of hard blockers:
+
+- `full.codefull_deployment`: every configured Apps Script deployment ID should
+  be a deployment of `assets/apps_script/CodeFull.gs`.
+- `full.tunnel_node_url`: `CodeFull.gs` must point `TUNNEL_SERVER_URL` at the
+  public tunnel-node origin.
+- `full.tunnel_auth`: `CodeFull.gs` `TUNNEL_AUTH_KEY` must match this service's
+  `TUNNEL_AUTH_KEY`.
+- `full.udp_support`: configure a SOCKS5 listener on the client when apps need
+  SOCKS5 UDP ASSOCIATE through the full tunnel.
+- `full.tunnel_health`: run `mhrv-f doctor --tunnel-node-url
+  https://<tunnel-node>`, start full mode, browse to an IP-check page, and
+  confirm the egress matches the tunnel-node.
+
 ## Performance: account groups and batching
 
 The mhrv-f client runs a pipelined batch multiplexer in full mode. Each Apps Script round-trip takes ~2s, so the client fires multiple batch requests concurrently. Concurrency is limited per Google account group, not per deployment ID.

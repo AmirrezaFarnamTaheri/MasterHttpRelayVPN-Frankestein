@@ -23,7 +23,15 @@ mode, and it does not add raw TCP/UDP support.
 5. Copy `assets/apps_script/CodeCloudflareWorker.gs` into Apps Script.
 6. Set `WORKER_URL`, set the same `WORKER_AUTH_KEY`, and set `AUTH_KEY`.
 7. Deploy Apps Script as a web app with access set to **Anyone**.
-8. Configure normal `mhrv-f` `apps_script` mode with the Apps Script deployment
+8. Open the Apps Script compatibility probe:
+
+   ```text
+   https://script.google.com/macros/s/DEPLOYMENT_ID/exec?compat=1
+   ```
+
+   Confirm `kind` is `apps_script_cloudflare_worker` before configuring the
+   client. The probe exposes helper metadata only; it does not expose secrets.
+9. Configure normal `mhrv-f` `apps_script` mode with the Apps Script deployment
    ID and the client-facing `AUTH_KEY`.
 
 ## Why The Worker Secret Matters

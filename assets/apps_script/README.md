@@ -10,6 +10,19 @@ Use the file that matches the mode you selected in the client.
 - `CodeCloudflareWorker.gs`: Apps Script entry that sends the final fetch
   through a private Cloudflare Worker.
 
+## Compatibility Probe
+
+Each helper exposes a non-secret compatibility probe at:
+
+```text
+https://script.google.com/macros/s/DEPLOYMENT_ID/exec?compat=1
+```
+
+The response includes `kind`, `version`, `protocol`, and `features`. It does
+not include secrets. Support and release checks should use this probe to spot
+stale deployments before debugging user configuration. A normal browser visit
+without `?compat=1` still returns the harmless decoy page.
+
 ## Deployment Checklist
 
 1. Open <https://script.google.com> and create a project.
@@ -23,7 +36,11 @@ Use the file that matches the mode you selected in the client.
 5. Deploy as a Web app:
    - Execute as: **Me**
    - Who has access: **Anyone**
-6. Copy the Deployment ID into the matching `account_groups[].script_ids`
+6. Open the compatibility probe and confirm the expected `kind`:
+   - `apps_script` for `Code.gs`
+   - `apps_script_full` for `CodeFull.gs`
+   - `apps_script_cloudflare_worker` for `CodeCloudflareWorker.gs`
+7. Copy the Deployment ID into the matching `account_groups[].script_ids`
    entry in `mhrv-f`.
 
 ## Safety Notes

@@ -1,6 +1,7 @@
 # Rust (any crate under the repo)
 target/
 dist/
+build/
 /ca
 /config.json
 .env
@@ -14,6 +15,11 @@ Thumbs.db
 *.pyc
 # Android SDK path (machine-local); CI builds the release APK — local Gradle optional.
 android/local.properties
+android/.gradle/
+android/**/build/
+android/**/.cxx/
+*.apk
+*.aab
 
 # Local Gradle cache accidentally created in repo root (should never be committed).
 .gradle-user-home/
