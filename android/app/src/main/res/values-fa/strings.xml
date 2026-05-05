@@ -27,6 +27,7 @@
     <string name="sec_live_logs">لاگ زنده</string>
     <string name="sec_how_to_use">راهنما و مراحل گام‌به‌گام</string>
     <string name="sec_app_splitting">تقسیم برنامه‌ها</string>
+    <string name="sec_trust_center">مرکز اعتماد</string>
 
     <!-- Primary actions -->
     <string name="btn_connect">اتصال</string>
@@ -93,6 +94,18 @@
     <string name="repair_full_udp_body">UDP در حالت Full از SOCKS5 UDP ASSOCIATE استفاده می‌کند. اگر برنامه‌ها به UDP نیاز دارند، پورت SOCKS5 را تنظیم کنید و با یک کلاینت UDP تست بگیرید.</string>
     <string name="repair_full_health_label">بررسی سلامت تونل کامل</string>
     <string name="repair_full_health_body">حالت Full را شروع کنید، یک صفحه بررسی IP عمومی باز کنید و با لاگ‌های tunnel-node مقایسه کنید. IP باید با VPS یا خروجی tunnel-node یکی باشد.</string>
+    <string name="trust_status_full_no_ca">CA محلی لازم نیست</string>
+    <string name="trust_status_ca_installed">CA مورد اعتماد است</string>
+    <string name="trust_status_ca_missing">CA باید نصب شود</string>
+    <string name="trust_center_hint">مرکز اعتماد مرزهای امنیتی این گوشی را توضیح می‌دهد: CA کاربر، رفتار اعتماد برنامه‌های اندروید، پیوستگی امضای APK، و اینکه چه داده‌ای برای پشتیبانی امن‌تر قابل اشتراک‌گذاری است.</string>
+    <string name="trust_android_scope_label">دامنهٔ CA کاربر در اندروید</string>
+    <string name="trust_android_scope_body">مرورگرها و ابزارهای توسعه معمولاً CA کاربر را قبول می‌کنند. بسیاری از برنامه‌های بانکی، استریم و پیام‌رسان در اندروید ۷ به بالا آن را نادیده می‌گیرند؛ بنابراین خطای گواهی در یک برنامه می‌تواند طبیعی باشد حتی وقتی مرورگر کار می‌کند.</string>
+    <string name="trust_signing_label">پیوستگی امضای APK</string>
+    <string name="trust_signing_body">APKهای رسمی توسط workflow انتشار و طبق سیاست مستند keystore کامیت‌شده امضا می‌شوند؛ انتشارهای CI منبع حقیقت برای به‌روزرسانی بدون حذف نصب هستند.</string>
+    <string name="trust_support_label">انضباط دادهٔ پشتیبانی</string>
+    <string name="trust_support_body">باندل‌های پشتیبانی دسکتاپ و CLI شامل trust.json و پیش‌نمایش config سانسورشده هستند. در اندروید، قبل از اشتراک‌گذاری config خروجی یا لاگ کپی‌شده را بررسی کنید چون auth key و LAN token حساس‌اند.</string>
+    <string name="trust_copy_support_snapshot">کپی snapshot سانسورشدهٔ پشتیبانی</string>
+    <string name="trust_install_cta">نصب / ترمیم گواهی MITM</string>
     <string name="dialog_export_title">Export config</string>
     <string name="dialog_export_warning">This includes your auth key. Only share with people you trust.</string>
     <string name="dialog_import_title">Import config?</string>
@@ -195,6 +208,7 @@
     <string name="snack_cert_saved_to">در %1$s ذخیره شد.</string>
     <string name="snack_cert_settings_hint">در تنظیمات “CA certificate” را جست‌وجو کنید و از همان‌جا نصب کنید — نه “VPN &amp; app user certificate” و نه “Wi‑Fi”.</string>
     <string name="snack_cert_tap_install_again">برای تلاش دوباره دوباره Install را بزنید.</string>
+    <string name="snack_support_snapshot_copied">snapshot سانسورشدهٔ پشتیبانی کپی شد</string>
 
     <!-- Update check summary -->
     <string name="update_check_failed_no_response">بررسی آپدیت ناموفق بود (بدون پاسخ)</string>

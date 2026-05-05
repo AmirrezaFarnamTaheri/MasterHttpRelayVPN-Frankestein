@@ -2517,17 +2517,29 @@ fn parse_relay_json(body: &[u8]) -> Result<Vec<u8>, FronterError> {
     let data: RelayResponse = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(_) => {
-            // Apps Script may prepend HTML fallback; try to extract first {...}
-            let start = text.find('{').ok_or_else(|| {
-                FronterError::BadResponse(format!("no json in: {}", &text[..text.len().min(200)]))
-            })?;
-            let end = text.rfind('}').ok_or_else(|| {
-                FronterError::BadResponse(format!(
-                    "no json end in: {}",
-                    &text[..text.len().min(200)]
-                ))
-            })?;
-            serde_json::from_str(&text[start..=end])?
+            if let Some(unwrapped) = extract_apps_script_user_html(text) {
+                serde_json::from_str(&unwrapped).map_err(|_| {
+                    FronterError::BadResponse(format!(
+                        "no json in apps_script user_html: {}",
+                        &unwrapped[..unwrapped.len().min(200)]
+                    ))
+                })?
+            } else {
+                // Apps Script may prepend HTML fallback; try to extract first {...}
+                let start = text.find('{').ok_or_else(|| {
+                    FronterError::BadResponse(format!(
+                        "no json in: {}",
+                        &text[..text.len().min(200)]
+                    ))
+                })?;
+                let end = text.rfind('}').ok_or_else(|| {
+                    FronterError::BadResponse(format!(
+                        "no json end in: {}",
+                        &text[..text.len().min(200)]
+                    ))
+                })?;
+                serde_json::from_str(&text[start..=end])?
+            }
         }
     };
 
@@ -2581,6 +2593,91 @@ fn parse_relay_json(body: &[u8]) -> Result<Vec<u8>, FronterError> {
     out.extend_from_slice(format!("Content-Length: {}\r\n\r\n", resp_body.len()).as_bytes());
     out.extend_from_slice(&resp_body);
     Ok(out)
+}
+
+fn extract_apps_script_user_html(text: &str) -> Option<String> {
+    let marker = "goog.script.init(\"";
+    let start_idx = text.find(marker)? + marker.len();
+    let end_marker = "\", \"\", undefined";
+    let end_idx = text[start_idx..].find(end_marker)? + start_idx;
+    let decoded = decode_js_string_escapes(&text[start_idx..end_idx])?;
+    let outer: Value = serde_json::from_str(&decoded).ok()?;
+    outer.get("userHtml")?.as_str().map(ToOwned::to_owned)
+}
+
+fn decode_js_string_escapes(s: &str) -> Option<String> {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c != b'\\' {
+            out.push(c as char);
+            i += 1;
+            continue;
+        }
+        if i + 1 >= bytes.len() {
+            return None;
+        }
+        match bytes[i + 1] {
+            b'x' => {
+                if i + 3 >= bytes.len() {
+                    return None;
+                }
+                let hex = std::str::from_utf8(&bytes[i + 2..i + 4]).ok()?;
+                let v = u8::from_str_radix(hex, 16).ok()?;
+                out.push(v as char);
+                i += 4;
+            }
+            b'u' => {
+                if i + 5 >= bytes.len() {
+                    return None;
+                }
+                let hex = std::str::from_utf8(&bytes[i + 2..i + 6]).ok()?;
+                let v = u32::from_str_radix(hex, 16).ok()?;
+                out.push(char::from_u32(v)?);
+                i += 6;
+            }
+            b'\\' => {
+                out.push('\\');
+                i += 2;
+            }
+            b'"' => {
+                out.push('"');
+                i += 2;
+            }
+            b'\'' => {
+                out.push('\'');
+                i += 2;
+            }
+            b'/' => {
+                out.push('/');
+                i += 2;
+            }
+            b'n' => {
+                out.push('\n');
+                i += 2;
+            }
+            b'r' => {
+                out.push('\r');
+                i += 2;
+            }
+            b't' => {
+                out.push('\t');
+                i += 2;
+            }
+            b'b' => {
+                out.push('\x08');
+                i += 2;
+            }
+            b'f' => {
+                out.push('\x0c');
+                i += 2;
+            }
+            _ => return None,
+        }
+    }
+    Some(out)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3063,6 +3160,59 @@ hello";
         let s = String::from_utf8_lossy(&raw);
         assert!(s.contains("Set-Cookie: a=1\r\n"));
         assert!(s.contains("Set-Cookie: b=2\r\n"));
+    }
+
+    #[test]
+    fn decode_js_string_escapes_supports_apps_script_forms() {
+        assert_eq!(
+            decode_js_string_escapes(r#"\x7b\x22s\x22:200,\x22b\x22:\x22\x22\x7d"#).unwrap(),
+            r#"{"s":200,"b":""}"#
+        );
+        assert_eq!(
+            decode_js_string_escapes(r#"a\nb\t\\\"c"#).unwrap(),
+            "a\nb\t\\\"c"
+        );
+        assert!(decode_js_string_escapes(r"\x7").is_none());
+        assert!(decode_js_string_escapes(r"\u00").is_none());
+    }
+
+    fn build_goog_script_init_wrapper(inner_relay_json: &str) -> String {
+        let outer = serde_json::json!({ "userHtml": inner_relay_json });
+        let outer_str = serde_json::to_string(&outer).unwrap();
+        let mut wire = String::with_capacity(outer_str.len() * 2);
+        for ch in outer_str.chars() {
+            match ch {
+                '{' => wire.push_str(r"\x7b"),
+                '}' => wire.push_str(r"\x7d"),
+                '"' => wire.push_str(r#"\""#),
+                other => wire.push(other),
+            }
+        }
+        format!(
+            "<html><body><script>goog.script.init(\"{}\", \"\", undefined);</script></body></html>",
+            wire
+        )
+    }
+
+    #[test]
+    fn extract_apps_script_user_html_unwraps_goog_init() {
+        let inner_json = r#"{"s":200,"h":{},"b":"aGk="}"#;
+        let wrapped = build_goog_script_init_wrapper(inner_json);
+        assert_eq!(
+            extract_apps_script_user_html(&wrapped).as_deref(),
+            Some(inner_json)
+        );
+    }
+
+    #[test]
+    fn parse_relay_json_unwraps_goog_script_init() {
+        let inner_json = r#"{"s":200,"h":{"Content-Type":"text/plain"},"b":"aGk="}"#;
+        let wrapped = build_goog_script_init_wrapper(inner_json);
+        let raw = parse_relay_json(wrapped.as_bytes()).unwrap();
+        let s = String::from_utf8_lossy(&raw);
+        assert!(s.starts_with("HTTP/1.1 200 OK\r\n"), "got: {s}");
+        assert!(s.contains("Content-Type: text/plain\r\n"), "got: {s}");
+        assert!(s.ends_with("hi"), "got: {s}");
     }
 
     #[tokio::test(flavor = "current_thread")]

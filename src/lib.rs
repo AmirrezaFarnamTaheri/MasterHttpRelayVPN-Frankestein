@@ -5,11 +5,13 @@ pub mod config;
 pub mod data_dir;
 pub mod doctor;
 pub mod domain_fronter;
+pub mod lan_utils;
 pub mod mitm;
 pub mod policy;
 pub mod profiles;
 pub mod proxy_server;
 pub mod readiness;
+pub mod redaction;
 pub mod relay_transport;
 pub mod response_quality;
 pub mod rlimit;
@@ -18,11 +20,11 @@ pub mod scan_sni;
 pub mod status_api;
 pub mod support_bundle;
 pub mod test_cmd;
+pub mod trust_center;
 pub mod tunnel_client;
 pub mod update_check;
 pub mod vercel_edge;
 
-#[cfg(feature = "ui")]
 #[cfg(feature = "ui")]
 pub mod xhttp_cloud_deploy;
 

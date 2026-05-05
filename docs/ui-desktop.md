@@ -15,9 +15,9 @@ and shows live logs.
 - **Walkthrough**: reopen the first-run wizard after it has been hidden.
 - **Doctor + Fix**: run diagnostics, apply safe local fixes, then run
   diagnostics again.
-- **Install CA / Remove CA / Check CA**: generate/install the local MITM CA,
-  remove OS/browser trust when uninstalling, and verify trust status. Stop the
-  proxy before removing the CA.
+- **Trust tab actions**: generate/install the local MITM CA, remove OS/browser
+  trust when uninstalling, verify trust status, and preview support-bundle
+  redaction state. Stop the proxy before removing the CA.
 
 ## Tabs
 
@@ -33,6 +33,9 @@ form:
   adding quota/capacity.
 - **Monitor**: traffic counters, dashboard, per-site stats, Test/Doctor,
   certificate/update status, and the Recent log panel.
+- **Trust**: read-only Trust Center snapshot, CA cert/key/trust status,
+  Firefox/NSS probe facts, Android signing policy, support-bundle manifest
+  preview, and CA install/remove/check actions.
 - **Help & docs**: first-run explanations, mode decision cards, backend
   warnings, advanced option explanations, and trust/security notes.
 
@@ -158,6 +161,28 @@ does not look like a global client failure.
 - **SOCKS5 port** -> `socks5_port`
 - **Listen host** -> `listen_host`
   - Keep `127.0.0.1` unless sharing to LAN intentionally.
+
+## Trust Tab
+
+The **Trust** tab is the first-class Desktop Trust Center surface. It uses the
+same Rust snapshot exported as `trust.json` in support bundles and printed by
+`mhrv-f trust-center`.
+
+It shows:
+
+- active mode and whether local CA trust is required;
+- CA certificate/key presence;
+- platform trust probe result;
+- Firefox profile counts, NSS DB counts, mhrv-f CA presence when `certutil` can
+  query NSS, app-managed `enterprise_roots` marker counts, and a compact
+  redacted per-profile detail list;
+- `certutil` availability;
+- Android release signing policy;
+- support-bundle file list, sensitivity flags, and redaction policy.
+
+The tab also exposes **Install CA**, **Remove CA**, and **Check CA**. These are
+the same serialized actions used elsewhere in the UI, so certificate operations
+do not overlap with a separate Trust Center job.
 
 ## Sharing And Per-App Routing
 

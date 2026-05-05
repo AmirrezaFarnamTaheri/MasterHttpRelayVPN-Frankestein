@@ -1,5 +1,7 @@
 # CFW Reference Audit
 
+Broader donor classification (status vocabulary and other trees): [`donor-absorption-matrix.md`](donor-absorption-matrix.md).
+
 The `mhr-cfw` reference folder was reviewed as a donor tree, not kept as a
 second runnable product. The maintained integration lives in:
 

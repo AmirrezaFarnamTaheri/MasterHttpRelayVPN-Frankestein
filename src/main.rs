@@ -12,6 +12,7 @@ use mhrv_jni::cert_installer::{install_ca, is_ca_trusted, reconcile_sudo_environ
 use mhrv_jni::config::Config;
 use mhrv_jni::mitm::{MitmCertManager, CA_CERT_FILE};
 use mhrv_jni::proxy_server::ProxyServer;
+use mhrv_jni::trust_center::{TrustSnapshot, TrustStatus};
 use mhrv_jni::{scan_ips, scan_sni, test_cmd};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -22,6 +23,8 @@ struct Args {
     remove_cert: bool,
     no_cert_check: bool,
     tunnel_node_url: Option<String>,
+    support_bundle_preview: bool,
+    trust_center_json: bool,
     command: Command,
 }
 
@@ -30,6 +33,7 @@ enum Command {
     Test,
     Doctor,
     DoctorFix,
+    TrustCenter,
     SupportBundle,
     ScanIps,
     TestSni,
@@ -47,8 +51,10 @@ USAGE:
     mhrv-f test [OPTIONS]             Probe apps_script/vercel_edge relay end-to-end
     mhrv-f doctor [OPTIONS]           Guided diagnostics (first-run fix assistant)
     mhrv-f doctor-fix [OPTIONS]       Doctor + apply one-click fixes (best-effort)
+    mhrv-f trust-center [OPTIONS]     Show certificate/signing/support trust snapshot
     mhrv-f init-config [OPTIONS]      Write config.json interactively
     mhrv-f support-bundle [OPTIONS]   Export an anonymized diagnostics bundle
+    mhrv-f support-bundle --preview   Show bundle contents/redaction without writing
     mhrv-f rollback-config            Restore last-known-good config (best-effort)
     mhrv-f scan-ips [OPTIONS]         Scan Google frontend IPs for reachability + latency
     mhrv-f scan-sni         Scan Google SNI name using Google frontend IPs found in 'scan-ips' command
@@ -61,6 +67,8 @@ OPTIONS:
     --no-cert-check      Skip the auto-install-if-untrusted check on startup
     --tunnel-node-url URL
                          Full-mode Doctor: probe URL/health/details live
+    --preview            support-bundle: print manifest/redaction preview and exit
+    --json               trust-center: print the raw JSON snapshot
     -h, --help           Show this message
     -V, --version        Show version
 
@@ -80,6 +88,8 @@ fn parse_args() -> Result<Args, String> {
     let mut remove_cert = false;
     let mut no_cert_check = false;
     let mut tunnel_node_url: Option<String> = None;
+    let mut support_bundle_preview = false;
+    let mut trust_center_json = false;
     let mut command = Command::Serve;
 
     let mut raw: Vec<String> = std::env::args().skip(1).collect();
@@ -95,6 +105,10 @@ fn parse_args() -> Result<Args, String> {
             }
             "doctor-fix" => {
                 command = Command::DoctorFix;
+                raw.remove(0);
+            }
+            "trust-center" => {
+                command = Command::TrustCenter;
                 raw.remove(0);
             }
             "init-config" => {
@@ -145,6 +159,8 @@ fn parse_args() -> Result<Args, String> {
             "--install-cert" => install_cert = true,
             "--remove-cert" => remove_cert = true,
             "--no-cert-check" => no_cert_check = true,
+            "--preview" => support_bundle_preview = true,
+            "--json" => trust_center_json = true,
             "--tunnel-node-url" => {
                 let v = it
                     .next()
@@ -157,14 +173,154 @@ fn parse_args() -> Result<Args, String> {
     if install_cert && remove_cert {
         return Err("--install-cert and --remove-cert cannot be used together".into());
     }
+    if support_bundle_preview && !matches!(command, Command::SupportBundle) {
+        return Err("--preview is only valid with `support-bundle`".into());
+    }
+    if trust_center_json && !matches!(command, Command::TrustCenter) {
+        return Err("--json is only valid with `trust-center`".into());
+    }
     Ok(Args {
         config_path,
         install_cert,
         remove_cert,
         no_cert_check,
         tunnel_node_url,
+        support_bundle_preview,
+        trust_center_json,
         command,
     })
+}
+
+fn trust_status_text(status: &TrustStatus) -> &'static str {
+    match status {
+        TrustStatus::NotRequired => "not required",
+        TrustStatus::Missing => "missing",
+        TrustStatus::PresentTrusted => "present and trusted",
+        TrustStatus::PresentUntrusted => "present but not trusted",
+    }
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+fn print_trust_center_text(snapshot: &TrustSnapshot) {
+    println!("Trust Center");
+    println!("============");
+    println!("mode: {}", snapshot.mode);
+    println!("platform: {} / {}", snapshot.platform, snapshot.arch);
+    println!("local CA required: {}", yes_no(snapshot.ca_required));
+    println!();
+    println!("CA");
+    println!("--");
+    println!("status: {}", trust_status_text(&snapshot.ca.status));
+    println!(
+        "cert: {} ({})",
+        yes_no(snapshot.ca.cert_exists),
+        snapshot.ca.cert_path
+    );
+    println!(
+        "key: {} ({})",
+        yes_no(snapshot.ca.key_exists),
+        snapshot.ca.key_path
+    );
+    match snapshot.ca.trusted_by_platform_probe {
+        Some(true) => println!("platform trust probe: trusted"),
+        Some(false) => println!("platform trust probe: not trusted"),
+        None => println!("platform trust probe: not available"),
+    }
+    if let Some(action) = snapshot.ca.next_action {
+        println!("next action: {action}");
+    }
+    println!();
+    println!("Browser trust");
+    println!("-------------");
+    println!(
+        "certutil available: {}",
+        yes_no(snapshot.browser.certutil_available)
+    );
+    println!(
+        "Firefox profiles: {} found, {} with NSS DB, {} app-managed enterprise_roots marker(s), {} user-owned enterprise_roots setting(s)",
+        snapshot.browser.firefox_profile_count,
+        snapshot.browser.firefox_profiles_with_cert_db,
+        snapshot.browser.firefox_profiles_with_enterprise_roots_marker,
+        snapshot
+            .browser
+            .firefox_profiles_with_user_owned_enterprise_roots
+    );
+    let firefox_nss = snapshot
+        .browser
+        .firefox_profiles_with_nss_cert
+        .map(|n| format!("{n} profile(s) contain the mhrv-f CA nickname"))
+        .unwrap_or_else(|| "unavailable (certutil not found)".to_string());
+    println!("Firefox NSS CA presence: {firefox_nss}");
+    if !snapshot.browser.firefox_profiles.is_empty() {
+        println!("Firefox profile details:");
+        for profile in &snapshot.browser.firefox_profiles {
+            let nss_ca = profile.nss_has_cert.map(yes_no).unwrap_or("unavailable");
+            println!(
+                "  - {}: NSS DB {}, NSS CA {}, app-managed enterprise_roots {}, user-owned enterprise_roots {}",
+                profile.profile_label,
+                yes_no(profile.has_cert_db),
+                nss_ca,
+                yes_no(profile.enterprise_roots_marker),
+                yes_no(profile.enterprise_roots_user_owned)
+            );
+        }
+    }
+    println!(
+        "Chrome/Chromium NSS DB present: {}",
+        yes_no(snapshot.browser.chrome_nssdb_present)
+    );
+    let chrome_nss = snapshot
+        .browser
+        .chrome_nssdb_has_cert
+        .map(yes_no)
+        .unwrap_or("unavailable");
+    println!("Chrome/Chromium NSS CA presence: {chrome_nss}");
+    println!("probe mode: read-only");
+    println!();
+    println!("Android");
+    println!("-------");
+    println!("{}", snapshot.android.note);
+    println!();
+    println!("Signing");
+    println!("-------");
+    println!(
+        "Android release keystore policy: {}",
+        snapshot.signing.android_release_keystore_policy
+    );
+    println!(
+        "CI release source of truth: {}",
+        snapshot.signing.ci_release_source_of_truth
+    );
+    println!("docs: {}", snapshot.signing.docs);
+    println!();
+    println!("Support bundle");
+    println!("--------------");
+    let manifest = mhrv_jni::support_bundle::preview_manifest();
+    let sensitive = manifest
+        .files
+        .iter()
+        .filter(|file| file.contains_sensitive_material)
+        .count();
+    println!(
+        "manifest: {} files, {} marked sensitive; review before sharing: {}",
+        manifest.files.len(),
+        sensitive,
+        yes_no(manifest.review_before_sharing)
+    );
+    println!(
+        "redaction: auth_keys={}, lan_tokens={}, deployment_ids={}, private_keys={}",
+        manifest.redaction.auth_keys,
+        manifest.redaction.lan_tokens,
+        manifest.redaction.deployment_ids,
+        manifest.redaction.private_keys,
+    );
 }
 
 fn init_logging(level: &str) {
@@ -491,6 +647,19 @@ async fn async_main() -> ExitCode {
         return run_init_config(args.config_path.as_deref());
     }
 
+    if matches!(args.command, Command::SupportBundle) && args.support_bundle_preview {
+        match serde_json::to_string_pretty(&mhrv_jni::support_bundle::preview_manifest()) {
+            Ok(json) => {
+                println!("{json}");
+                return ExitCode::SUCCESS;
+            }
+            Err(e) => {
+                eprintln!("Support bundle preview failed: {}", e);
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
     let config_path = mhrv_jni::data_dir::resolve_config_path(args.config_path.as_deref());
     let config = match Config::load(&config_path) {
         Ok(c) => c,
@@ -504,6 +673,22 @@ async fn async_main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+
+    if matches!(args.command, Command::TrustCenter) {
+        let snapshot = mhrv_jni::trust_center::snapshot(&config);
+        if args.trust_center_json {
+            match serde_json::to_string_pretty(&snapshot) {
+                Ok(json) => println!("{json}"),
+                Err(e) => {
+                    eprintln!("failed to render trust snapshot: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        } else {
+            print_trust_center_text(&snapshot);
+        }
+        return ExitCode::SUCCESS;
+    }
 
     init_logging(&config.log_level);
 
@@ -609,6 +794,7 @@ async fn async_main() -> ExitCode {
                 ExitCode::FAILURE
             };
         }
+        Command::TrustCenter => unreachable!("handled before logging"),
         Command::InitConfig => unreachable!("handled before config load"),
         Command::SupportBundle => {
             match mhrv_jni::support_bundle::export_support_bundle(&config).await {

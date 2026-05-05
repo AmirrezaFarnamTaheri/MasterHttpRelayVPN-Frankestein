@@ -66,17 +66,25 @@ These warnings do not prevent the proxy from starting, because LAN sharing can
 be intentional. They are there so an exposed listener is never quiet or
 surprising.
 
-1. Set `listen_host = "0.0.0.0"` in the UI's **Sharing and per-app routing**
-   section.
+1. Enable **Share with other devices on my Wi-Fi / network** in the UI's
+   **Sharing and per-app routing** section. This sets `listen_host =
+   "0.0.0.0"` for you.
 2. Keep `listen_port` and `socks5_port` on known values, for example `8085`
    and `8086`.
 3. Add `lan_allowlist` entries for the devices that may connect.
 4. On the other device, set its HTTP proxy to `<desktop-lan-ip>:8085` or SOCKS5
    proxy to `<desktop-lan-ip>:8086`.
 
-When the UI says `this-device-LAN-IP`, replace it with the desktop's actual
-address on that Wi-Fi/Ethernet network. On Windows, `ipconfig` usually shows it
-as an IPv4 address under the active adapter.
+The UI tries to detect `<desktop-lan-ip>` from the OS route table and then shows
+copyable HTTP/SOCKS endpoints. The detection uses a UDP socket route lookup and
+does not send a network packet. If detection fails, replace
+`this-device-LAN-IP` with the desktop's actual address on that Wi-Fi/Ethernet
+network. On Windows, `ipconfig` usually shows it as an IPv4 address under the
+active adapter.
+
+If you manually set a specific bind address such as `192.168.1.50`, the desktop
+UI shows a **Custom bind** badge and does not let the LAN checkbox overwrite it.
+Edit **Listen host** directly when you want to leave that custom interface.
 
 Recommended config:
 

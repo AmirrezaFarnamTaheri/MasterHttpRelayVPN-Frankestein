@@ -153,7 +153,9 @@ VpnService TUN  ──► tun2proxy (داخل فرایند)
 
 پروکسی `TLS` را محلی باز می‌کند (قبل از ارسال به `Apps Script` دوباره رمزگذاری می‌شود)، پس گوشی باید به یک گواهی که در اولین اجرا ساخته‌ایم اعتماد کند.
 
-۱. در برنامه روی **Install MITM certificate** بزنید.
+۱. در برنامه، از کارت **مرکز اعتماد** روی **Install MITM certificate** بزنید.
+   همین کارت نشان می‌دهد آیا حالت انتخاب‌شده به CA کاربر نیاز دارد و آیا
+   اندروید fingerprint گواهی صادرشده را در `AndroidCAStore` می‌بیند یا نه.
 ۲. دیالوگ تأیید `fingerprint` گواهی را نشان می‌دهد. **Install** را بزنید.
 ۳. برنامه:
    - یک نسخهٔ `PEM` در مسیر `Downloads/mhrv-ca.crt` ذخیره می‌کند
@@ -210,10 +212,25 @@ VpnService TUN  ──► tun2proxy (داخل فرایند)
 | **SNI pool + tester** | باز/بسته می‌شود | تیک برای `rotation`؛ `Test` برای هر ردیف + `Test all` |
 | **Advanced** | باز/بسته می‌شود | `verify_ssl`، `log_level`، `parallel_relay`، `upstream_socks5` |
 | **Start / Stop** | ردیف پایین | ۲ ثانیه `debounce` بین `tap`ها |
-| **Install MITM certificate** | زیر `Start/Stop` | ذخیرهٔ `PEM` → باز کردن `Settings` → جست‌وجوی `CA certificate` |
-| **Usage today (estimated)** | زیر دکمهٔ `Install` وقتی وصل هستید | تخمین محلی فراخوانی‌ها/بایت‌های Apps Script همین دستگاه و زمان ریست سهمیه |
-| **Live logs** | باز/بسته می‌شود (زیر دکمهٔ `Install`) | هر ۵۰۰ میلی‌ثانیه `ring buffer` پروکسی خوانده می‌شود |
+| **Trust Center / مرکز اعتماد** | صفحهٔ اصلی، کنار readiness | وضعیت CA، محدودیت CA کاربر در اندروید، پیوستگی امضای APK، کپی snapshot سانسورشدهٔ پشتیبانی، یادآوری اشتراک‌گذاری امن، و دکمهٔ نصب/ترمیم گواهی MITM |
+| **Usage today (estimated)** | زیر مرکز اعتماد وقتی وصل هستید | تخمین محلی فراخوانی‌ها/بایت‌های Apps Script همین دستگاه و زمان ریست سهمیه |
+| **Live logs** | باز/بسته می‌شود (زیر مصرف) | هر ۵۰۰ میلی‌ثانیه `ring buffer` پروکسی خوانده می‌شود |
 | **v1.0.x (badge نسخه)** | بالا سمت راست | ضربه بزنید تا `GitHub` را برای نسخهٔ جدیدتر چک کند |
+
+### QR و deep-link برای اشتراک config
+
+خروجی اندروید از scheme فعلی `mhrvf://` استفاده می‌کند: JSON فشرده‌شده با
+Deflate و Base64 سازگار با URL. import همچنان لینک‌های legacy با scheme
+`mhrv-rs://` را قبول می‌کند تا setupهای قبلی قابل استفاده بمانند. paste کردن
+JSON خام هم برای انتقال دستی قابل قبول است.
+
+مسیر QR/deep-link نباید فیلدهای advanced را که اندروید هنوز ویرایش نمی‌کند حذف
+کند. `ConfigStore.encode()` قبل از نوشتن keyهای owned اندروید، JSON اشتراک را
+از `preservedUnknownRootJson` شروع می‌کند؛ بنابراین root keyهای Desktop-only یا
+دستی در export موبایل حفظ می‌شوند. payload نامعتبر باید بسته fail شود و `null`
+برگرداند، نه config ناقص. gate استاتیک بدون Gradle:
+`python tools/check-android-config-sharing.py`؛ اجرای JVM عمیق‌تر در
+`ConfigStoreTest.kt` و CI/pre-provisioned Gradle است.
 
 ---
 
@@ -264,6 +281,24 @@ VpnService TUN  ──► tun2proxy (داخل فرایند)
 
 به‌طور پیش‌فرض، برنامه‌های اندروید از اعتماد به `CA`های کاربری `opt-out` می‌کنند (پیش‌فرض `Network Security Config` از `Android 7` به بعد). برنامه‌های بانکی، `Netflix`، `Spotify`، اکثر پیام‌رسان‌ها — همه از `mhrv-f` با خطای `cert` رد می‌شوند. `TUN` ترافیکشان را به ما می‌فرستد؛ آن‌ها `leaf` ما را رد می‌کنند. فقط برنامه‌هایی که صریحاً `opt-in` کرده‌اند (مرورگرها، `curl`، بعضی ابزارهای توسعه‌دهنده) کار می‌کنند. این محدودیت کلی `MITM proxy` است.
 
+کارت **مرکز اعتماد** همین نکته را روی صفحهٔ اصلی تکرار می‌کند تا کار کردن یک
+مرورگر با اعتماد کامل همهٔ برنامه‌ها اشتباه گرفته نشود. حالت `full` به CA
+کاربر محلی نیاز ندارد، ولی در عوض مسیر `CodeFull.gs` + `tunnel-node` را
+می‌خواهد.
+
+دکمهٔ **Copy redacted support snapshot** در مرکز اعتماد، خلاصه‌ای از حالت،
+مسیریابی، اعتماد، تعداد deploymentها و وضعیت preservation را کپی می‌کند، بدون
+اینکه `auth_key`، کلید Serverless، توکن LAN، upstream SOCKS5، JSON خام ناشناخته
+یا Deployment ID کامل را وارد خروجی کند. باندل کامل پشتیبانی همچنان در
+دسکتاپ/CLI کامل‌تر است، ولی این snapshot موبایل از اشتراک config خام امن‌تر
+است.
+مالک این منطق در کد اندروید `SupportRedaction.kt` است و قرارداد JVM آن در
+`SupportRedactionTest.kt` ثبت شده؛ صفحهٔ Compose فقط از همین utility استفاده
+می‌کند. در local/CI، دستور `python tools/check-android-support-redaction.py`
+هم داخل repo sanity اجرا می‌شود؛ این gate استاتیک Gradle اجرا نمی‌کند و اگر
+UI دوباره helper محلی masking/snapshot بسازد یا assertionهای حذف secretها از
+تست حذف شوند، fail می‌شود.
+
 ---
 
 ## رفع اشکال
@@ -276,7 +311,7 @@ VpnService TUN  ──► tun2proxy (داخل فرایند)
 | قسمت‌های `JS` سایت `load` نمی‌شوند | رد `OPTIONS` قبل از v1.0.0 | به v1.0.0+ به‌روزرسانی کنید. اگر باز هم بود: `Live logs` → `Relay failed` پیدا کنید، گزارش دهید |
 | همه `SNI`ها در `tester` تایم‌اوت | `google_ip` قدیمی است (گوگل `A record` را عوض کرده) | **Auto-detect google_ip** را بزنید |
 | `SNI tester` فقط بعضی ردیف‌ها قرمز | آن `SNI`ها در شبکهٔ شما `DPI-filtered` هستند | تیک ردیف‌های خراب را بردارید |
-| برنامه با ضربه به `Stop` بسته می‌شود | باگ `race` نسخهٔ ۱.۰.۰/۱.۰.۱ | به v1.0.2 به‌روزرسانی کنید. اگر روی v1.0.2+ هست: `adb logcat -s MhrvVpnService mhrv-crash mhrv_jni` و گزارش دهید |
+| برنامه با ضربه به `Stop` بسته می‌شود | `race` در lifecycle یا teardown native | به جدیدترین APK به‌روزرسانی کنید. buildهای فعلی فقط یک‌بار `ACTION_STOP` می‌فرستند، اجازه می‌دهند service بعد از teardown خودش `stopSelf()` کند، و قبل از join کردن `tun2proxy` اول Rust proxy را می‌بندند تا read روی SOCKS5 تمیز بیدار شود. اگر هنوز رخ داد: `adb logcat -s MhrvVpnService mhrv-crash mhrv_jni` و گزارش دهید |
 | هنگام `update`، `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | APK قدیمی با کلید متفاوت امضا شده (قبل از v1.0.2) | ابتدا `uninstall` کنید، سپس APK جدید را نصب کنید. فقط یک‌بار — از v1.0.2 به بعد امضا ثابت است |
 | `Chrome` سفید بدون خطا | معمولاً باگ `render` روی `emulator` با `GPU` نرم‌افزاری | روی دستگاه واقعی تست کنید. `Live logs` را ببینید آیا رله واقعاً درخواست می‌فرستد |
 | حلقهٔ `Cloudflare Turnstile` | [محدودیت شناخته‌شده](#cloudflare-turnstile-verify-you-are-human-حلقهٔ-بی‌پایان) | در این معماری راه‌حلی ندارد |

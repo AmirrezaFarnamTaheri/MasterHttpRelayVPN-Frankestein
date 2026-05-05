@@ -17,11 +17,13 @@ use mhrv_jni::config::{
 };
 use mhrv_jni::data_dir;
 use mhrv_jni::domain_fronter::{DomainFronter, DEFAULT_GOOGLE_SNI_POOL};
+use mhrv_jni::lan_utils::{detect_lan_ip, is_loopback_only, is_share_on_lan};
 use mhrv_jni::mitm::{MitmCertManager, CA_CERT_FILE};
 use mhrv_jni::proxy_server::ProxyServer;
 use mhrv_jni::readiness;
+use mhrv_jni::trust_center::{self, TrustStatus};
 use mhrv_jni::xhttp_cloud_deploy::{self, XhttpDeployWorkerMsg};
-use mhrv_jni::{doctor, scan_ips, scan_sni, test_cmd};
+use mhrv_jni::{doctor, scan_ips, scan_sni, support_bundle, test_cmd};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WIN_WIDTH: f32 = 900.0;
@@ -237,6 +239,7 @@ enum UiTab {
     Network,
     Advanced,
     Monitor,
+    Trust,
     Help,
 }
 
@@ -1275,6 +1278,19 @@ mod config_wire_tests {
             Some("Network -> Sharing and per-app routing -> Allowed IPs")
         );
 
+        form.listen_host = "127.0.0.1".into();
+        form.mode = "apps_script".into();
+        let dashboard = mode_dashboard(&form);
+        let repair = desktop_repair_action(
+            dashboard
+                .requirements
+                .iter()
+                .find(|item| item.id == readiness::CA_TRUST)
+                .expect("ca trust row"),
+        )
+        .expect("ca trust warning should have repair action");
+        assert_eq!(repair.tab, UiTab::Trust);
+
         form.mode = "full".into();
         form.socks5_port.clear();
         let dashboard = mode_dashboard(&form);
@@ -1937,6 +1953,8 @@ fn repair_tab_for_target(target: &str) -> UiTab {
         UiTab::Network
     } else if target.starts_with("help.") {
         UiTab::Help
+    } else if target.starts_with("setup.ca_trust") {
+        UiTab::Trust
     } else {
         UiTab::Setup
     }
@@ -1948,6 +1966,7 @@ fn repair_hint_for_tab(tab: UiTab) -> &'static str {
         UiTab::Network => "Jump to network/listener fields for this blocker.",
         UiTab::Advanced => "Jump to advanced configuration fields for this blocker.",
         UiTab::Monitor => "Jump to monitor diagnostics for this blocker.",
+        UiTab::Trust => "Jump to certificate, signing, and support-bundle trust state.",
         UiTab::Help => "Jump to help and documentation for this blocker.",
     }
 }
@@ -2648,6 +2667,7 @@ fn tab_bar(ui: &mut egui::Ui, active_tab: &mut UiTab) {
                     (UiTab::Network, "Network"),
                     (UiTab::Advanced, "Advanced"),
                     (UiTab::Monitor, "Monitor"),
+                    (UiTab::Trust, "Trust"),
                     (UiTab::Help, "Help & docs"),
                 ] {
                     if tab_button(ui, *active_tab == tab, label).clicked() {
@@ -2658,8 +2678,292 @@ fn tab_bar(ui: &mut egui::Ui, active_tab: &mut UiTab) {
         });
 }
 
+fn trust_status_label(status: &TrustStatus) -> (&'static str, egui::Color32) {
+    match status {
+        TrustStatus::NotRequired => ("not required", OK_GREEN),
+        TrustStatus::Missing => ("missing", ERR_RED),
+        TrustStatus::PresentTrusted => ("trusted", OK_GREEN),
+        TrustStatus::PresentUntrusted => ("present, not trusted", ACCENT_WARM),
+    }
+}
+
+fn bool_status(value: bool) -> (&'static str, egui::Color32) {
+    if value {
+        ("yes", OK_GREEN)
+    } else {
+        ("no", ACCENT_WARM)
+    }
+}
+
+fn trust_center_snapshot_panel(ui: &mut egui::Ui, form: &FormState) {
+    match form.to_config() {
+        Ok(cfg) => {
+            let snap = trust_center::snapshot(&cfg);
+            let manifest = support_bundle::preview_manifest();
+            let (ca_label, ca_color) = trust_status_label(&snap.ca.status);
+            let (cert_label, cert_color) = bool_status(snap.ca.cert_exists);
+            let (key_label, key_color) = bool_status(snap.ca.key_exists);
+            let sensitive_files = manifest
+                .files
+                .iter()
+                .filter(|file| file.contains_sensitive_material)
+                .count();
+
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(29, 32, 35))
+                .stroke(egui::Stroke::new(1.0, CARD_STROKE_HI.linear_multiply(0.55)))
+                .rounding(8.0)
+                .inner_margin(egui::Margin::symmetric(12.0, 10.0))
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("Mode: {}", snap.mode))
+                                .strong()
+                                .color(TEXT_MAIN),
+                        );
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new(format!("CA: {ca_label}"))
+                                .strong()
+                                .color(ca_color),
+                        );
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Support bundle: {} files, {} sensitive",
+                                manifest.files.len(),
+                                sensitive_files
+                            ))
+                            .color(TEXT_MUTED),
+                        );
+                    });
+                    ui.add_space(6.0);
+                    egui::Grid::new("trust_center_snapshot_grid")
+                        .num_columns(2)
+                        .spacing([16.0, 5.0])
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new("CA cert").color(TEXT_LABEL));
+                            ui.label(egui::RichText::new(cert_label).color(cert_color));
+                            ui.end_row();
+
+                            ui.label(egui::RichText::new("CA key").color(TEXT_LABEL));
+                            ui.label(egui::RichText::new(key_label).color(key_color));
+                            ui.end_row();
+
+                            ui.label(egui::RichText::new("Platform probe").color(TEXT_LABEL));
+                            let probe = match snap.ca.trusted_by_platform_probe {
+                                Some(true) => ("trusted", OK_GREEN),
+                                Some(false) => ("not trusted", ACCENT_WARM),
+                                None => ("not available", TEXT_MUTED),
+                            };
+                            ui.label(egui::RichText::new(probe.0).color(probe.1));
+                            ui.end_row();
+
+                            ui.label(egui::RichText::new("Firefox profiles").color(TEXT_LABEL));
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} found, {} NSS DB, {} managed markers",
+                                    snap.browser.firefox_profile_count,
+                                    snap.browser.firefox_profiles_with_cert_db,
+                                    snap.browser.firefox_profiles_with_enterprise_roots_marker
+                                ))
+                                .color(TEXT_MUTED),
+                            );
+                            ui.end_row();
+
+                            ui.label(egui::RichText::new("certutil").color(TEXT_LABEL));
+                            let (certutil, certutil_color) =
+                                bool_status(snap.browser.certutil_available);
+                            ui.label(egui::RichText::new(certutil).color(certutil_color));
+                            ui.end_row();
+
+                            ui.label(egui::RichText::new("Firefox NSS CA").color(TEXT_LABEL));
+                            let firefox_nss = snap
+                                .browser
+                                .firefox_profiles_with_nss_cert
+                                .map(|n| format!("{n} profile(s)"))
+                                .unwrap_or_else(|| "certutil unavailable".to_string());
+                            ui.label(egui::RichText::new(firefox_nss).color(TEXT_MUTED));
+                            ui.end_row();
+
+                            if !snap.browser.firefox_profiles.is_empty() {
+                                ui.label(egui::RichText::new("Firefox details").color(TEXT_LABEL));
+                                ui.vertical(|ui| {
+                                    for profile in snap.browser.firefox_profiles.iter().take(4) {
+                                        let nss_ca = profile
+                                            .nss_has_cert
+                                            .map(
+                                                |has| if has { "CA present" } else { "CA missing" },
+                                            )
+                                            .unwrap_or("CA unknown");
+                                        let marker = if profile.enterprise_roots_marker {
+                                            "managed"
+                                        } else if profile.enterprise_roots_user_owned {
+                                            "user enterprise_roots"
+                                        } else {
+                                            "no marker"
+                                        };
+                                        ui.small(
+                                            egui::RichText::new(format!(
+                                                "{}: {}, {}, {}",
+                                                profile.profile_label,
+                                                if profile.has_cert_db {
+                                                    "NSS DB"
+                                                } else {
+                                                    "no NSS DB"
+                                                },
+                                                nss_ca,
+                                                marker
+                                            ))
+                                            .color(TEXT_MUTED),
+                                        );
+                                    }
+                                    if snap.browser.firefox_profiles.len() > 4 {
+                                        ui.small(
+                                            egui::RichText::new(format!(
+                                                "+{} more profile(s) in trust-center --json",
+                                                snap.browser.firefox_profiles.len() - 4
+                                            ))
+                                            .color(TEXT_MUTED),
+                                        );
+                                    }
+                                });
+                                ui.end_row();
+                            }
+
+                            ui.label(egui::RichText::new("Chrome NSS CA").color(TEXT_LABEL));
+                            let chrome_nss = snap
+                                .browser
+                                .chrome_nssdb_has_cert
+                                .map(|has| if has { "present" } else { "missing" })
+                                .unwrap_or("unavailable");
+                            let chrome_color = match snap.browser.chrome_nssdb_has_cert {
+                                Some(true) => OK_GREEN,
+                                Some(false) => ACCENT_WARM,
+                                None => TEXT_MUTED,
+                            };
+                            ui.label(egui::RichText::new(chrome_nss).color(chrome_color));
+                            ui.end_row();
+
+                            ui.label(egui::RichText::new("Signing policy").color(TEXT_LABEL));
+                            ui.label(
+                                egui::RichText::new(snap.signing.android_release_keystore_policy)
+                                    .color(TEXT_MUTED),
+                            );
+                            ui.end_row();
+                        });
+                    if let Some(action) = snap.ca.next_action {
+                        ui.add_space(6.0);
+                        ui.small(egui::RichText::new(action).color(ACCENT_WARM));
+                    }
+                });
+        }
+        Err(err) => {
+            help_callout(
+                ui,
+                "Trust snapshot unavailable",
+                &format!(
+                    "The current form does not validate yet, so the Trust Center cannot map CA requirements to a mode: {err}"
+                ),
+                ACCENT_WARM,
+            );
+        }
+    }
+}
+
+fn trust_center_tab(ui: &mut egui::Ui, form: &FormState, cmd_tx: &Sender<Cmd>) {
+    help_muted(
+        ui,
+        "Read-only trust state for this config. Install/remove/check actions reuse the existing serialized CA commands; the snapshot itself does not mutate trust stores.",
+    );
+    ui.add_space(6.0);
+    trust_center_snapshot_panel(ui, form);
+
+    ui.add_space(10.0);
+    help_subheading(ui, "Certificate actions");
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .small_button("Install CA")
+            .on_hover_text("Install or repair the local MITM CA trust. This may need admin privileges.")
+            .clicked()
+        {
+            let _ = cmd_tx.send(Cmd::InstallCa);
+        }
+        if ui
+            .small_button("Remove CA")
+            .on_hover_text("Remove the local MITM CA from OS/browser trust stores and delete local ca/ when safe.")
+            .clicked()
+        {
+            let _ = cmd_tx.send(Cmd::RemoveCa);
+        }
+        if ui
+            .small_button("Check CA")
+            .on_hover_text("Run the local OS trust probe without changing files.")
+            .clicked()
+        {
+            let _ = cmd_tx.send(Cmd::CheckCaTrusted);
+        }
+    });
+
+    ui.add_space(10.0);
+    help_subheading(ui, "Support bundle preview");
+    let manifest = support_bundle::preview_manifest();
+    ui.label(
+        egui::RichText::new(format!(
+            "{} files; auth keys {}, LAN tokens {}, deployment IDs {}, private keys {}.",
+            manifest.files.len(),
+            manifest.redaction.auth_keys,
+            manifest.redaction.lan_tokens,
+            manifest.redaction.deployment_ids,
+            manifest.redaction.private_keys,
+        ))
+        .color(TEXT_MUTED),
+    );
+    ui.add_space(4.0);
+    egui::Grid::new("trust_support_bundle_manifest_grid")
+        .num_columns(3)
+        .spacing([12.0, 4.0])
+        .striped(true)
+        .show(ui, |ui| {
+            ui.label(egui::RichText::new("file").strong().color(TEXT_LABEL));
+            ui.label(egui::RichText::new("category").strong().color(TEXT_LABEL));
+            ui.label(egui::RichText::new("sensitive").strong().color(TEXT_LABEL));
+            ui.end_row();
+            for file in &manifest.files {
+                ui.label(egui::RichText::new(file.path).monospace());
+                ui.label(egui::RichText::new(file.category).color(TEXT_MUTED));
+                let (label, color) = bool_status(file.contains_sensitive_material);
+                ui.label(egui::RichText::new(label).color(color));
+                ui.end_row();
+            }
+        });
+
+    ui.add_space(10.0);
+    help_subheading(ui, "Docs");
+    ui.horizontal_wrapped(|ui| {
+        ui.hyperlink_to(
+            egui::RichText::new("Trust Center").size(12.0).color(ACCENT),
+            "docs/trust-center.md",
+        );
+        ui.hyperlink_to(
+            egui::RichText::new("Safety").size(12.0).color(ACCENT),
+            "docs/safety-security.md",
+        );
+        ui.hyperlink_to(
+            egui::RichText::new("Android signing")
+                .size(12.0)
+                .color(ACCENT),
+            "docs/android-signing.md",
+        );
+        ui.hyperlink_to(
+            egui::RichText::new("Doctor").size(12.0).color(ACCENT),
+            "docs/doctor.md",
+        );
+    });
+}
+
 /// In-app help: orientation, walkthrough, field tips, and maintainer links.
-fn help_walkthrough(ui: &mut egui::Ui) {
+fn help_walkthrough(ui: &mut egui::Ui, form: &FormState) {
     ui.spacing_mut().item_spacing.y = 7.0;
     help_subheading(ui, "Welcome");
     help_muted(
@@ -2681,6 +2985,35 @@ fn help_walkthrough(ui: &mut egui::Ui) {
          4) Keep front_domain as www.google.com and run Scan IPs / SNI tests if connections time out.\n\
          5) Save config, then Start. Set your browser or system proxy to the HTTP port; SOCKS5 is optional.\n\
          6) Use Test relay and Doctor early. They are faster than guessing.",
+    );
+
+    help_subheading(ui, "Trust Center (certificates & signing)");
+    help_muted(
+        ui,
+        "CA install/remove, Firefox NSS vs OS trust, Android user-CA limits, APK signing policy, \
+         and diagnostic redaction expectations are summarized in one maintainer-facing hub doc.",
+    );
+    trust_center_snapshot_panel(ui, form);
+    ui.add_space(4.0);
+    ui.hyperlink_to(
+        egui::RichText::new("Open docs/trust-center.md")
+            .size(12.0)
+            .color(ACCENT),
+        "docs/trust-center.md",
+    );
+
+    help_subheading(ui, "Backend registry (deploy map)");
+    help_muted(
+        ui,
+        "Canonical table of Apps Script helpers, Cloudflare Worker exit, serverless JSON relays, tunnel-node, \
+         compat probes, and Doctor/Test wiring — before dedicated Backend Registry UI lands.",
+    );
+    ui.add_space(4.0);
+    ui.hyperlink_to(
+        egui::RichText::new("Open docs/backend-registry.md")
+            .size(12.0)
+            .color(ACCENT),
+        "docs/backend-registry.md",
     );
 
     help_subheading(ui, "Choose by goal");
@@ -3203,7 +3536,7 @@ impl eframe::App for App {
             let current_fingerprint = form_fingerprint(&self.form);
             let has_unsaved_changes = current_fingerprint
                 .as_ref()
-                .map_or(false, |fp| self.last_saved_fingerprint.as_ref() != Some(fp));
+                .is_some_and(|fp| self.last_saved_fingerprint.as_ref() != Some(fp));
             egui::Frame::none()
                 .fill(egui::Color32::from_rgb(26, 25, 24))
                 .stroke(egui::Stroke::new(
@@ -3393,7 +3726,12 @@ impl eframe::App for App {
 
             if self.active_tab == UiTab::Help {
                 section(ui, "Help & walkthrough", |ui| {
-                    help_walkthrough(ui);
+                    help_walkthrough(ui, &self.form);
+                });
+            }
+            if self.active_tab == UiTab::Trust {
+                section(ui, "Trust Center", |ui| {
+                    trust_center_tab(ui, &self.form, &self.cmd_tx);
                 });
             }
 
@@ -3721,26 +4059,55 @@ impl eframe::App for App {
                     ui,
                     "Desktop exposes HTTP/SOCKS proxy listeners. Apps that let you choose a proxy can opt in per app. Full transparent desktop per-app capture needs OS-specific packet filtering and is not exposed as a fake toggle here.",
                 );
+                let listen_host_snapshot = self.form.listen_host.trim().to_string();
+                let lower_snapshot = listen_host_snapshot.to_ascii_lowercase();
+                let custom_bind = !listen_host_snapshot.is_empty()
+                    && !is_share_on_lan(&listen_host_snapshot)
+                    && !is_loopback_only(&lower_snapshot);
+                let lan_bound = is_share_on_lan(&listen_host_snapshot);
+                let detected_lan_ip = if lan_bound { detect_lan_ip() } else { None };
                 ui.horizontal_wrapped(|ui| {
-                    if ui.button("Local only").on_hover_text("Bind HTTP/SOCKS to 127.0.0.1. Other LAN devices cannot connect.").clicked() {
-                        self.form.listen_host = "127.0.0.1".into();
-                    }
-                    if ui.button("Share on LAN").on_hover_text("Bind HTTP/SOCKS to 0.0.0.0. Add a token or allowed IPs before using this on real networks.").clicked() {
-                        self.form.listen_host = "0.0.0.0".into();
-                    }
-                    let lan_bound = matches!(self.form.listen_host.trim(), "0.0.0.0" | "::");
-                    let (color, label) = if lan_bound {
-                        (ERR_RED, "LAN exposed")
+                    if custom_bind {
+                        ui.label(
+                            egui::RichText::new(format!("Custom bind: {listen_host_snapshot}"))
+                                .strong()
+                                .color(egui::Color32::from_rgb(240, 190, 90)),
+                        )
+                        .on_hover_text(
+                            "A specific bind address is set in Listen host. The LAN toggle is locked so Save cannot replace that custom interface.",
+                        );
+                        ui.small("Edit Listen host above to switch back to local-only or all-interface sharing.");
                     } else {
-                        (OK_GREEN, "local-only")
-                    };
-                    ui.label(egui::RichText::new(label).strong().color(color));
+                        let mut share = lan_bound;
+                        if ui
+                            .checkbox(&mut share, "Share with other devices on my Wi-Fi / network")
+                            .on_hover_text(
+                                "When enabled, HTTP/SOCKS bind to 0.0.0.0 so trusted LAN devices can connect. macOS may show a Firewall prompt the first time.",
+                            )
+                            .changed()
+                        {
+                            self.form.listen_host = if share {
+                                "0.0.0.0".into()
+                            } else {
+                                "127.0.0.1".into()
+                            };
+                        }
+                        let (color, label) = if share {
+                            (ERR_RED, "LAN exposed")
+                        } else {
+                            (OK_GREEN, "local-only")
+                        };
+                        ui.label(egui::RichText::new(label).strong().color(color));
+                    }
                 });
-                let lan_bound = matches!(self.form.listen_host.trim(), "0.0.0.0" | "::");
+                let lan_bound = is_share_on_lan(self.form.listen_host.trim());
+                let detected_lan_ip = if lan_bound { detected_lan_ip } else { None };
                 let client_host = if lan_bound {
-                    "this-device-LAN-IP"
+                    detected_lan_ip
+                        .map(|ip| ip.to_string())
+                        .unwrap_or_else(|| "this-device-LAN-IP".into())
                 } else {
-                    "127.0.0.1"
+                    "127.0.0.1".into()
                 };
                 let http_endpoint = format!("http://{}:{}", client_host, self.form.listen_port.trim());
                 let socks_endpoint = self.form.socks5_port.trim();
@@ -3776,6 +4143,17 @@ impl eframe::App for App {
                         }
                     }
                 });
+                if lan_bound {
+                    let msg = if detected_lan_ip.is_some() {
+                        "LAN address was detected from the OS route table; no probe packet is sent."
+                    } else {
+                        "LAN address could not be detected. Use the active Wi-Fi/Ethernet IPv4 from system network settings."
+                    };
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(120.0 + 8.0);
+                        ui.small(egui::RichText::new(msg).color(egui::Color32::from_gray(145)));
+                    });
+                }
 
                 let mut lan_token = self.form.lan_token.clone().unwrap_or_default();
                 form_row(
@@ -3813,7 +4191,7 @@ impl eframe::App for App {
                 );
                 self.form.lan_allowlist = clean_optional_list(&lan_allowlist);
 
-                let lan_bound = matches!(self.form.listen_host.trim(), "0.0.0.0" | "::");
+                let lan_bound = is_share_on_lan(self.form.listen_host.trim());
                 let token_set = self
                     .form
                     .lan_token
@@ -5314,6 +5692,25 @@ fn background_thread(shared: Arc<Shared>, rx: Receiver<Cmd>) {
 
             Ok(Cmd::Test(cfg)) => {
                 let shared2 = shared.clone();
+                let mode_explainer = match cfg.mode_kind().ok() {
+                    Some(mhrv_jni::config::Mode::Full) => Some(
+                        "Test Relay is wired only for apps_script mode. In full mode the data plane is tunnel-node. To verify it end-to-end, start the proxy and load https://whatismyipaddress.com in your browser through 127.0.0.1:8085; the IP shown should be your tunnel-node VPS IP.",
+                    ),
+                    Some(mhrv_jni::config::Mode::Direct) => Some(
+                        "Test Relay is wired only for apps_script mode. In direct mode there is no Apps Script relay; requests go through the SNI-rewrite tunnel directly to the selected edge. Verify by loading https://www.google.com through the proxy.",
+                    ),
+                    _ => None,
+                };
+                if let Some(msg) = mode_explainer {
+                    {
+                        let mut st = shared.state.lock().unwrap();
+                        st.last_test_ok = None;
+                        st.last_test_msg = msg.into();
+                        st.last_test_msg_at = Some(Instant::now());
+                    }
+                    push_log(&shared, &format!("[ui] test skipped: {}", msg));
+                    continue;
+                }
                 push_log(&shared, "[ui] running test...");
                 rt.spawn(async move {
                     let ok = test_cmd::run(&cfg).await;

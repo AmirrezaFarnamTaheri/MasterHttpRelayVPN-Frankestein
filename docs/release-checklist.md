@@ -5,11 +5,26 @@ build artifacts; this checklist catches human-facing drift that CI cannot infer.
 
 ## Source And Generated Files
 
-- Run the normal Rust checks: format, tests, clippy, and the UI-feature build.
-- Run the generated readiness contract check:
+- Run the normal Rust checks: format, tests, clippy, and the UI-feature build
+  from the repo root; then run **`tunnel-node`** the same way CI does:
 
   ```bash
+  cd tunnel-node
+  cargo clippy --all-targets -- -D warnings
+  cargo test --all-targets
+  cd ..
+  ```
+- Run the generated readiness contract check:
+
+  CI runs this step with PowerShell 7 (`pwsh`), but **local Windows verification
+  does not require `pwsh`**. Use whichever PowerShell you have:
+
+  ```powershell
+  # PowerShell 7 (recommended, matches CI)
   pwsh ./tools/generate-readiness-contract.ps1 -Check
+
+  # Windows PowerShell 5.1 (built-in on most Windows installs)
+  powershell -NoProfile -ExecutionPolicy Bypass -File tools\generate-readiness-contract.ps1 -Check
   ```
 
 - Confirm generated Android readiness IDs and `docs/readiness-matrix.md` are
@@ -36,6 +51,55 @@ build artifacts; this checklist catches human-facing drift that CI cannot infer.
 
   ```bash
   python tools/check-doc-links.py
+  ```
+
+- When `docs/parity-matrix.json` or mode/backend docs references change,
+  regenerate the parity matrix and run its drift gates (CI runs the same `-Check`
+  step):
+
+  ```bash
+  python tools/generate-parity-matrix.py
+  python tools/generate-parity-matrix.py -Check
+  python tools/check-parity-matrix.py
+  ```
+
+- When `docs/config-registry.json` or serialized `Config` fields change, regenerate
+  the registry docs and run the freshness gate:
+
+  ```bash
+  python tools/generate-config-registry.py
+  python tools/generate-config-registry.py -Check
+  python tools/check-config-registry-nested-fields.py
+  python tools/check-config-registry-map-semantics.py
+  python tools/check-config-wire-vs-registry.py
+  ```
+
+  Rust CI also runs `cargo test config_registry_covers_all_config_keys`.
+
+- When `docs/platform-defaults.json` or importer defaults in Rust/Android change,
+  verify generated docs and static Android contract references:
+
+  ```bash
+  python tools/check-platform-defaults.py
+  python tools/generate-platform-defaults-doc.py -Check
+  python tools/check-android-platform-defaults-test-static.py
+  ```
+
+- Before pushing broad parity or docs changes, mirror CI **repo-sanity**
+  locally:
+
+  ```bash
+  python tools/run-repo-sanity.py
+  ```
+
+  (`tools/README.md` documents `--skip-node` / `--skip-readiness`.) Alternatively,
+  run individual drift gates such as:
+
+  ```bash
+  python tools/check-doc-anchors.py
+  python tools/check-android-config-keys.py
+  python tools/check-android-owned-keys-list.py
+  python tools/check-sni-default-pool.py
   ```
 
 ## Apps Script Helpers
@@ -85,3 +149,22 @@ build artifacts; this checklist catches human-facing drift that CI cannot infer.
 - Verify release notes mention user-visible UI, helper, Android, and backend
   behavior changes.
 - Verify `SHA256SUMS.txt` is present in the GitHub Release before announcing.
+
+## Release Notification Authority
+
+- **Canonical release:** The GitHub Release created by `.github/workflows/release.yml`
+  (tag, artifacts, `SHA256SUMS.txt`, and release body). This is the only
+  authoritative “what shipped” announcement for builds and hashes.
+- **Optional Telegram post:** When repo variable `TELEGRAM_NOTIFY_ENABLED` is
+  `true` and secrets are set, the workflow may post the CI-built universal APK
+  and optional changelog text. Treat Telegram as a **convenience mirror**, not
+  a second source of truth: if a post disagrees with the GitHub Release, trust
+  GitHub.
+- Maintainer batch logs (for example `docs/changelog/batch-*.md`) are for audit
+  and bookkeeping; they do not replace per-version release notes or the GitHub
+  Release body.
+
+## Workspace Cleanup (Before Or After Release Prep)
+
+See [`docs/workspace-cleanup.md`](workspace-cleanup.md) to drop regenerable
+`target/`, Gradle caches, and similar artifacts so local verification stays fast.

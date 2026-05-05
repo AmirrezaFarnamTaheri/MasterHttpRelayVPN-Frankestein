@@ -6,6 +6,7 @@
 use crate::cert_installer::{install_ca, is_ca_trusted};
 use crate::config::{Config, Mode};
 use crate::mitm::{MitmCertManager, CA_CERT_FILE};
+use crate::redaction::redact_url_credentials;
 use crate::test_cmd;
 use rustls::pki_types::ServerName;
 use serde::Deserialize;
@@ -365,10 +366,7 @@ fn normalize_tunnel_node_health_url(raw: &str) -> Result<Url, String> {
 }
 
 fn redact_url_for_display(url: &Url) -> String {
-    let mut display = url.clone();
-    let _ = display.set_username("");
-    let _ = display.set_password(None);
-    display.to_string()
+    redact_url_credentials(url)
 }
 
 #[derive(Debug, Deserialize)]

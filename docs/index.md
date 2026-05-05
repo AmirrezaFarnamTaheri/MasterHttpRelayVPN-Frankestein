@@ -18,9 +18,10 @@ The safest way to approach the project is:
 
 Use `mhrv-f-ui` for first setup. It includes a first-run wizard, a persistent
 top control panel, and task-focused tabs for Setup, Network, Advanced, Monitor,
-and Help & docs. The UI exposes mode summary cards, backend-tool open buttons,
-CA install/removal, relay testing, Doctor diagnostics, live logs, profiles,
-update checks, and LAN/per-app controls with copyable proxy endpoints.
+Trust, and Help & docs. The UI exposes mode summary cards, backend-tool open
+buttons, CA install/removal, relay testing, Doctor diagnostics, live logs,
+profiles, update checks, LAN/per-app controls with copyable proxy endpoints,
+and Trust Center/support-bundle preview state.
 
 - Main setup guide: [`README.md`](../README.md#setup-guide)
 - Desktop UI reference: [`docs/ui-desktop.md`](ui-desktop.md)
@@ -30,10 +31,16 @@ update checks, and LAN/per-app controls with copyable proxy endpoints.
 ### Android
 
 The Android app runs the same Rust engine, adds a Compose UI, and uses
-`VpnService` + `tun2proxy` for VPN mode.
+`VpnService` + `tun2proxy` for VPN mode. Its main screen now mirrors the
+desktop/CLI trust vocabulary with a compact Trust Center card for CA status,
+Android user-CA limits, release-signing continuity, and support-data sharing
+discipline.
 
 - Android guide: [`docs/android.md`](android.md)
+- Android unknown-root preservation (`ownedKeys`, drift gates): [`docs/android-config-preservation.md`](android-config-preservation.md)
 - Persian Android guide: [`docs/android.fa.md`](android.fa.md)
+- Release APK signing policy (committed keystore, CI authority):
+  [`docs/android-signing.md`](android-signing.md)
 - Per-app routing and LAN sharing:
   [`docs/sharing-and-per-app-routing.md`](sharing-and-per-app-routing.md)
 
@@ -53,6 +60,8 @@ Read the detailed comparison before committing to a path:
 
 ## Backend Guides
 
+- Backend registry (deploy map, health probes, compat `kind`s):
+  [`docs/backend-registry.md`](backend-registry.md)
 - Apps Script setup:
   [`README.md`](../README.md#step-1--deploy-the-apps-script-relay-one-time)
 - Vercel Edge JSON setup:
@@ -90,6 +99,7 @@ CLI:
 
 ```bash
 ./mhrv-f doctor
+./mhrv-f trust-center
 ./mhrv-f test
 ./mhrv-f test-sni
 ./mhrv-f scan-ips
@@ -111,7 +121,13 @@ Use the full guide before enabling LAN exposure:
 ## Troubleshooting And Reference
 
 - Guided diagnostics: [`docs/doctor.md`](doctor.md)
+- Trust Center CLI/UI/bundle snapshot: [`docs/trust-center.md`](trust-center.md)
 - Shared readiness IDs and repair targets: [`docs/readiness-matrix.md`](readiness-matrix.md)
+- Canonical config registry (field metadata): [`docs/config-registry.md`](config-registry.md)
+- Config parity matrix (field × surface): [`docs/config-parity-matrix.md`](config-parity-matrix.md)
+- Mode/backend parity matrix (surface support): [`docs/parity-matrix.md`](parity-matrix.md)
+- Platform defaults (Rust vs Android, canonical JSON + generated table):
+  [`docs/platform-defaults.md`](platform-defaults.md)
 - Symptom decision tree: [`docs/troubleshooting.md`](troubleshooting.md)
 - Safety and CA lifecycle: [`docs/safety-security.md`](safety-security.md)
 - Advanced knobs: [`docs/advanced-options.md`](advanced-options.md)
@@ -119,6 +135,16 @@ Use the full guide before enabling LAN exposure:
 - Glossary: [`docs/glossary.md`](glossary.md)
 - Maintainer release checklist:
   [`docs/release-checklist.md`](release-checklist.md)
+- Maintainer drift tools (Python generators and CI parity gates):
+  [`tools/README.md`](../tools/README.md) — one-command mirror of CI:
+  `python tools/run-repo-sanity.py`
+- Local workspace cleanup (build caches and regenerable dirs):
+  [`docs/workspace-cleanup.md`](workspace-cleanup.md)
+- Donor reference trees — absorption matrix (what to port vs quarantine):
+  [`docs/donor-absorption-matrix.md`](donor-absorption-matrix.md)
+- Official YouTube apps vs browser / external Cronet patch research (docs-only):
+  [`docs/youtube-external-patching.md`](youtube-external-patching.md)
+- Maintainer batch / audit changelogs: [`docs/changelog/`](changelog/)
 
 ## Offline Or Blocked GitHub Releases
 

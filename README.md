@@ -2,7 +2,8 @@
 
 [![Latest release](https://img.shields.io/github/v/release/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein?sort=semver&display_name=tag&logo=github&label=release)](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/total?label=downloads&logo=github)](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/releases)
-[![CI](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/actions/workflows/release.yml/badge.svg)](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/actions/workflows/release.yml)
+[![Release workflow](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/actions/workflows/release.yml/badge.svg)](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/actions/workflows/release.yml)
+[![CI checks](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/actions/workflows/ci.yml/badge.svg)](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein?color=blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein?style=flat&logo=github)](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/stargazers)
 
@@ -14,6 +15,12 @@ Free DPI bypass via Google Apps Script as a remote relay, with TLS SNI concealme
 Bug reports and contributions: [issues](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/issues).
 
 **[English Guide](#setup-guide)** | **[راهنمای فارسی](#راهنمای-فارسی)**
+
+<p align="center" dir="rtl">
+  ۱. <a href="https://www.youtube.com/watch?v=voCwxgvWR5U" target="_blank" rel="noopener noreferrer">راهنمای تصویری راه‌اندازی به زبان فارسی</a> (YouTube)
+  <br>
+  ۲. <a href="https://kian-irani.github.io/mhrv-setup-full-tunell/" target="_blank" rel="noopener noreferrer">راهنمای جامع متنی راه‌اندازی به زبان فارسی</a> با تشکر از <a href="https://github.com/KIAN-IRANi" target="_blank" rel="noopener noreferrer">Kian Irani</a>
+</p>
 
 ## Why this exists
 
@@ -65,9 +72,9 @@ For a handful of Google-owned domains (`google.com`, `youtube.com`, `fonts.googl
 
 Linux (x86_64, aarch64), macOS (x86_64, aarch64), Windows (x86_64), **Android 7.0+** (universal APK covering arm64, armv7, x86_64, x86). Prebuilt binaries on the [releases page](https://github.com/AmirrezaFarnamTaheri/MasterHttpRelayVPN-Frankestein/releases).
 
-**Android users** — grab `mhrv-f-android-universal-v*.apk` and follow the full walk-through in [docs/android.md](docs/android.md) (English) or [docs/android.fa.md](docs/android.fa.md) (فارسی). The Android build runs the exact same `mhrv-f` crate as the desktop (via JNI) and adds a TUN bridge via `tun2proxy`, so every app on the device routes its IP traffic through the proxy without per-app configuration.
+**Android users** — grab `mhrv-f-android-universal-v*.apk` and follow the full walk-through in [docs/android.md](docs/android.md) (English) or [docs/android.fa.md](docs/android.fa.md) (فارسی). The Android build runs the exact same `mhrv-f` crate as the desktop (via JNI) and adds a TUN bridge via `tun2proxy`, so every app on the device routes its IP traffic through the proxy without per-app configuration. The main screen now includes a compact Trust Center card for CA status, Android app-trust limits, APK signing continuity, and safe support-data sharing.
 
-> **Android and HTTPS in other apps:** TUN mode captures IP traffic, but *HTTPS* in arbitrary apps only works if the app trusts the user-installed CA. On Android 7+ (`minSdk = 24`), that requires the app to opt in (e.g. `networkSecurityConfig`). **Chrome and Firefox typically do**; many chat, social, and banking apps do not. For those, use `PROXY_ONLY` with the app’s own proxy settings, `direct` when you only need Google services, or `upstream_socks5` to another path. This follows normal Android trust rules, not a limitation specific to this app.
+> **Android and HTTPS in other apps:** TUN mode captures IP traffic, but *HTTPS* in arbitrary apps only works if the app trusts the user-installed CA. On Android 7+ (`minSdk = 24`), that requires the app to opt in (e.g. `networkSecurityConfig`). **Chrome and Firefox typically do**; many chat, social, and banking apps do not. The Android Trust Center card keeps this visible. For apps that opt out, use `PROXY_ONLY` with the app’s own proxy settings, `full` mode when you need to avoid local MITM, `direct` when you only need Google services, or `upstream_socks5` to another path. This follows normal Android trust rules, not a limitation specific to this app.
 
 ## What's in a release
 
@@ -76,7 +83,7 @@ Each archive contains two binaries and a launcher script:
 | file | purpose |
 |---|---|
 | `mhrv-f` / `mhrv-f.exe` | CLI. Headless use, servers, automation. Works on all platforms; no system deps on macOS/Windows. |
-| `mhrv-f-ui` / `mhrv-f-ui.exe` | Desktop UI (egui). Tabbed Setup, Network, Advanced, Monitor, and Help & docs views with Start/Stop/Test controls, backend helper links, live stats, and logs. |
+| `mhrv-f-ui` / `mhrv-f-ui.exe` | Desktop UI (egui). Tabbed Setup, Network, Advanced, Monitor, Trust, and Help & docs views with Start/Stop/Test controls, backend helper links, live stats, trust status, and logs. |
 | `run.sh` / `run.command` / `run.bat` | Platform launcher: installs the MITM CA (needs sudo/admin) and then starts the UI. Use this on first run. |
 
 macOS archives also ship `mhrv-f.app` (in `*-app.zip`) — double-click to launch the UI without a terminal. You'll still need to run the CLI (`mhrv-f --install-cert`) or `run.command` once to install the CA.
@@ -156,6 +163,14 @@ cargo build --release --features ui
 # Binaries: target/release/mhrv-f and target/release/mhrv-f-ui
 ```
 
+Before opening a PR, mirror CI **repo-sanity** locally (Python drift gates, generator freshness checks, Apps Script syntax/tests, readiness contract `-Check`, and related scans):
+
+```bash
+python tools/run-repo-sanity.py
+```
+
+See [`tools/README.md`](tools/README.md) for flags (`--skip-node`, `--skip-readiness`) and individual scripts.
+
 If you renamed the folder locally (for example to `mhrv-f`), `cd` into that name instead; only the path changes.
 
 ### Step 3 — First run: install the MITM CA
@@ -203,7 +218,7 @@ Open the UI and fill in the form:
 - **Adaptive runtime profile (Advanced)** — optional auto-tuning for a few hot-path knobs. Turn on `runtime_auto_tune` and pick `runtime_profile` (`eco`, `balanced`, `max_speed`) to set defaults for range-parallelism and relay timeouts (and parallel relay dispatch when `parallel_relay` is left at 0/1).
 - **Google IP** — `216.239.38.120` is a solid default. Use the **scan** button to probe for a faster one from your network.
 - **Front domain** — keep `www.google.com`.
-- **HTTP port** / **SOCKS5 port** — defaults `8085` / `8086`.
+- **HTTP port** / **SOCKS5 port** — defaults `8085` / `8086` (Android uses different onboard defaults by design — see [`docs/platform-defaults.md`](docs/platform-defaults.md)).
 
 Hit **Save**, then **Start**. Use **Test** any time to send one request end-to-end through the relay and report the result.
 
@@ -246,6 +261,8 @@ Then:
 ./mhrv-f                   # serve (default)
 ./mhrv-f test              # one-shot end-to-end probe
 ./mhrv-f doctor            # guided diagnostics (first-run fix assistant)
+./mhrv-f trust-center      # CA/browser/signing/support trust snapshot
+./mhrv-f trust-center --json
 ./mhrv-f scan-ips          # rank Google frontend IPs by latency
 ./mhrv-f --install-cert    # reinstall the MITM CA
 ./mhrv-f --remove-cert     # remove OS/browser trust and delete local ca/
@@ -298,16 +315,25 @@ If you need to report a bug, you can export an **anonymized** diagnostics bundle
 mhrv-f support-bundle
 ```
 
+Preview the exact files and redaction policy first:
+
+```bash
+mhrv-f support-bundle --preview
+```
+
 It writes a folder under your user-data directory (shown earlier in this README) at:
 
 - `support-bundles/bundle-<timestamp>/`
 
 The bundle includes:
 
+- `manifest.json` (file list and redaction policy)
 - `meta.json` (version/platform)
 - `config.redacted.json` (secrets removed; deployment IDs masked)
 - `doctor.json` (doctor report)
 - `status.json` (minimal status snapshot)
+- `trust.json` (Trust Center snapshot: CA/trust/signing state)
+- `recent-logs.txt` (bounded, redacted latest persistent log excerpt when available; otherwise a note)
 
 #### scan-ips configuration (optional)
 
@@ -447,6 +473,7 @@ Memory footprint is ~15-20 MB resident — fine on anything with ≥128 MB RAM. 
 
 - **`mhrv-f test`** — sends one request through the relay and reports success/latency. Use this first whenever something breaks — it isolates "relay is up" from "client config is wrong".
 - **`mhrv-f doctor`** — guided first-run diagnostics. Checks config warnings, MITM CA trust, full-mode readiness reminders, and the end-to-end relay probe where applicable. In full mode, add `--tunnel-node-url https://<tunnel-node>` to probe `/health/details` live.
+- **`mhrv-f trust-center`** — prints the same read-only Trust Center snapshot used by Desktop Help and `support-bundle` (`--json` emits the raw machine-readable shape).
 - **`mhrv-f rollback-config`** — restore the last-known-good config snapshot (saved automatically before UI overwrites config.json). Useful if you saved a broken config and can’t start.
 - **`mhrv-f scan-ips`** — parallel TLS probe of 28 known Google frontend IPs, sorted by latency. Take the winner and put it in `google_ip`. The UI has the same thing behind the **scan** button next to the Google IP field.
 - **`mhrv-f test-sni`** — parallel TLS probe of every SNI name in your rotation pool against the configured `google_ip`. Tells you which front-domain names actually pass through your ISP's DPI. The UI has the same thing in the **SNI pool…** floating window, with checkboxes, per-row **Test** buttons, and a **Keep ✓ only** button that auto-trims to what worked.

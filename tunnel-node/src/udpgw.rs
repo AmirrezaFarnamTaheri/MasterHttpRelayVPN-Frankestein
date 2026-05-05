@@ -347,20 +347,15 @@ async fn get_or_create_socket(
     let addr_clone = addr.clone();
     let reader = tokio::spawn(async move {
         let mut recv_buf = vec![0u8; UDP_MTU];
-        loop {
-            match sock_clone.recv(&mut recv_buf).await {
-                Ok(n) => {
-                    let resp = serialise_frame(&Frame {
-                        flags: FLAG_DATA,
-                        conn_id,
-                        addr: Some(addr_clone.clone()),
-                        payload: recv_buf[..n].to_vec(),
-                    });
-                    if tx_clone.send(resp).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
+        while let Ok(n) = sock_clone.recv(&mut recv_buf).await {
+            let resp = serialise_frame(&Frame {
+                flags: FLAG_DATA,
+                conn_id,
+                addr: Some(addr_clone.clone()),
+                payload: recv_buf[..n].to_vec(),
+            });
+            if tx_clone.send(resp).await.is_err() {
+                break;
             }
         }
     });

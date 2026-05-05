@@ -1,0 +1,619 @@
+{
+  "config_version": {
+    "type": "u32",
+    "default": "1",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "preserve",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be <= CURRENT_CONFIG_VERSION",
+    "examples": ["config.example.json", "config.direct.example.json"]
+  },
+  "mode": {
+    "type": "string enum",
+    "default": "apps_script",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/relay-modes.md",
+    "validation": "must be one of apps_script|vercel_edge|direct|full (legacy google_only loads as direct)",
+    "examples": ["config.example.json", "config.direct.example.json", "config.vercel-edge.example.json"]
+  },
+  "google_ip": {
+    "type": "string (IPv4)",
+    "default": "216.239.38.120",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "read/write (platform default differs)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "validated by readiness/doctor probes; optional deep validation",
+    "examples": ["config.example.json", "config.direct.example.json"]
+  },
+  "front_domain": {
+    "type": "string (hostname)",
+    "default": "www.google.com",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be a DNS hostname; used for SNI-rewrite pool expansion",
+    "examples": ["config.example.json", "config.direct.example.json"]
+  },
+  "listen_host": {
+    "type": "string (ip/host bind)",
+    "default": "127.0.0.1",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "default only (phone UI uses loopback)",
+    "backend": "runtime",
+    "docs": "docs/sharing-and-per-app-routing.md",
+    "validation": "LAN exposure guidance + readiness warnings",
+    "examples": ["config.example.json"]
+  },
+  "listen_port": {
+    "type": "u16",
+    "default": "8085",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "default only (Android uses 8080)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must not conflict with socks5_port",
+    "examples": ["config.example.json"]
+  },
+  "socks5_port": {
+    "type": "u16 | null",
+    "default": "8086",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "default only (Android uses 1081)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must not conflict with listen_port",
+    "examples": ["config.example.json"]
+  },
+  "log_level": {
+    "type": "string",
+    "default": "warn",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/troubleshooting.md",
+    "validation": "accepted by tracing filter; invalid values fall back or fail parse depending on path",
+    "examples": ["config.example.json"]
+  },
+  "verify_ssl": {
+    "type": "bool",
+    "default": "true",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/safety-security.md",
+    "validation": "controls upstream TLS verification to targets; does not disable local MITM semantics",
+    "examples": ["config.example.json"]
+  },
+  "hosts": {
+    "type": "map<string,string>",
+    "default": "{}",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "host override keys/values validated by routing logic",
+    "examples": ["config.example.json"],
+    "value_semantics": "JSON object mapping hostname keys to target strings (typically IPv4/IPv6 literals); routing consults this map so listed hosts bypass ordinary DNS for the resolved target. Keys are runtime hostname matches per README/MITM routing rules."
+  },
+  "enable_batching": {
+    "type": "bool",
+    "default": "false",
+    "modes": ["apps_script"],
+    "desktop": "preserve (hidden/compat)",
+    "android": "preserve",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "compat knob; reserved for JSON batch envelopes",
+    "examples": []
+  },
+  "upstream_socks5": {
+    "type": "string | null",
+    "default": "null",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must parse as host:port; used for raw-TCP passthrough chaining",
+    "examples": []
+  },
+  "parallel_relay": {
+    "type": "u8",
+    "default": "1",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "clamped to available healthy script IDs/groups",
+    "examples": []
+  },
+  "coalesce_step_ms": {
+    "type": "u16",
+    "default": "0 (compiled default)",
+    "modes": ["full"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/relay-modes.md",
+    "validation": "0 uses compiled defaults; used for full-mode batch coalescing",
+    "examples": []
+  },
+  "coalesce_max_ms": {
+    "type": "u16",
+    "default": "0 (compiled default)",
+    "modes": ["full"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/relay-modes.md",
+    "validation": "0 uses compiled defaults; used for full-mode batch coalescing",
+    "examples": []
+  },
+  "relay_rate_limit_qps": {
+    "type": "f64 | null",
+    "default": "null",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >0 when set",
+    "examples": []
+  },
+  "relay_rate_limit_burst": {
+    "type": "u32 | null",
+    "default": "null",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "defaults derived from qps when unset",
+    "examples": []
+  },
+  "runtime_profile": {
+    "type": "string | null",
+    "default": "balanced (when runtime_auto_tune=true)",
+    "modes": ["apps_script", "full"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "eco|balanced|max_speed",
+    "examples": []
+  },
+  "runtime_auto_tune": {
+    "type": "bool",
+    "default": "false",
+    "modes": ["apps_script", "full"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "enables profile-driven derived defaults",
+    "examples": []
+  },
+  "range_parallelism": {
+    "type": "u8 | null",
+    "default": "null (derived when auto tune enabled)",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "must be >0 when set",
+    "examples": []
+  },
+  "range_chunk_bytes": {
+    "type": "u64 | null",
+    "default": "null (derived when auto tune enabled)",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "must be reasonable size when set",
+    "examples": []
+  },
+  "relay_request_timeout_secs": {
+    "type": "u64 | null",
+    "default": "null (derived when auto tune enabled)",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "must be within sane range when set",
+    "examples": []
+  },
+  "request_timeout_secs": {
+    "type": "u64 | null",
+    "default": "null",
+    "modes": ["full"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "clamped to [5,300] when set",
+    "examples": []
+  },
+  "auto_blacklist_strikes": {
+    "type": "u32 | null",
+    "default": "null (compiled default 3)",
+    "modes": ["full"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >0 when set",
+    "examples": []
+  },
+  "auto_blacklist_window_secs": {
+    "type": "u64 | null",
+    "default": "null (compiled default 30)",
+    "modes": ["full"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >0 when set",
+    "examples": []
+  },
+  "auto_blacklist_cooldown_secs": {
+    "type": "u64 | null",
+    "default": "null (compiled default 120)",
+    "modes": ["full"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >0 when set",
+    "examples": []
+  },
+  "sni_hosts": {
+    "type": "list<string> | null",
+    "default": "null (auto-expand)",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "each entry must be a hostname",
+    "examples": []
+  },
+  "fetch_ips_from_api": {
+    "type": "bool",
+    "default": "false",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "enables Google IP discovery",
+    "examples": []
+  },
+  "max_ips_to_scan": {
+    "type": "usize",
+    "default": "100",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >=1",
+    "examples": []
+  },
+  "scan_batch_size": {
+    "type": "usize",
+    "default": "500",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >=1",
+    "examples": []
+  },
+  "google_ip_validation": {
+    "type": "bool",
+    "default": "true",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "enables frontend validation when scanning",
+    "examples": []
+  },
+  "normalize_x_graphql": {
+    "type": "bool",
+    "default": "false",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "safe optional normalizer",
+    "examples": []
+  },
+  "youtube_via_relay": {
+    "type": "bool",
+    "default": "false",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "toggles YouTube HTML/API routing",
+    "examples": []
+  },
+  "passthrough_hosts": {
+    "type": "list<string>",
+    "default": "[]",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "host match syntax validated by runtime",
+    "examples": []
+  },
+  "block_quic": {
+    "type": "bool",
+    "default": "false",
+    "modes": ["full"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/udpgw.md",
+    "validation": "only meaningful for full-mode UDP/SOCKS5 datagrams",
+    "examples": []
+  },
+  "tunnel_doh": {
+    "type": "bool",
+    "default": "true",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "controls DoH bypass default",
+    "examples": []
+  },
+  "bypass_doh_hosts": {
+    "type": "list<string>",
+    "default": "[]",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "docs/advanced-options.md",
+    "validation": "host match list",
+    "examples": []
+  },
+  "fronting_groups": {
+    "type": "list<FrontingGroup>",
+    "default": "[]",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge + raw frontingGroupsJson)",
+    "backend": "runtime",
+    "docs": "docs/fronting-groups.md",
+    "validation": "sni must be valid hostname; ip must be IP; domains list must be non-empty",
+    "examples": ["config.fronting-groups.example.json"],
+    "nested_fields": {
+      "domains": {
+        "type": "list<string>",
+        "docs": "docs/fronting-groups.md",
+        "validation": "non-empty; exact host + dot-anchored subdomains (case-insensitive)"
+      },
+      "ip": {
+        "type": "string (IPv4/IPv6)",
+        "docs": "docs/fronting-groups.md",
+        "validation": "edge IP to dial for TLS to this group"
+      },
+      "name": {
+        "type": "string",
+        "docs": "docs/fronting-groups.md",
+        "validation": "non-empty human-readable label for logs/docs"
+      },
+      "sni": {
+        "type": "string (hostname)",
+        "docs": "docs/fronting-groups.md",
+        "validation": "upstream TLS SNI served by that edge IP"
+      }
+    }
+  },
+  "domain_overrides": {
+    "type": "list<DomainOverride>",
+    "default": "[]",
+    "modes": ["apps_script", "vercel_edge", "direct"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "host match syntax; force_route allowed values",
+    "examples": [],
+    "nested_fields": {
+      "force_route": {
+        "type": "string | null",
+        "docs": "README.md",
+        "validation": "omit/null for default routing; else direct | sni_rewrite | relay | full_tunnel"
+      },
+      "host": {
+        "type": "string",
+        "docs": "README.md",
+        "validation": "exact hostname or suffix `.example.com` for subdomain match"
+      },
+      "never_chunk": {
+        "type": "bool",
+        "docs": "README.md",
+        "validation": "when true, disable range-parallel chunking for this host"
+      }
+    }
+  },
+  "account_groups": {
+    "type": "list<AccountGroup> | null",
+    "default": "null",
+    "modes": ["apps_script", "full"],
+    "desktop": "read/write",
+    "android": "read/write (simple projection + preserve advanced)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "required for apps_script/full; must include auth_key + >=1 script_id",
+    "examples": ["config.example.json"],
+    "nested_fields": {
+      "auth_key": {
+        "type": "string",
+        "docs": "README.md",
+        "validation": "required; must match AUTH_KEY in deployed Apps Script"
+      },
+      "enabled": {
+        "type": "bool",
+        "docs": "README.md",
+        "validation": "default true; soft-disable a group without deleting it"
+      },
+      "label": {
+        "type": "string | null",
+        "docs": "README.md",
+        "validation": "optional label for UI/logs"
+      },
+      "script_ids": {
+        "type": "string | list<string>",
+        "docs": "README.md",
+        "validation": "one deployment ID or many; bare IDs or full /macros/s/ URLs normalized server-side"
+      },
+      "weight": {
+        "type": "u8",
+        "docs": "README.md",
+        "validation": "relative priority when multiple groups are healthy; default 1"
+      }
+    }
+  },
+  "vercel": {
+    "type": "object (VercelConfig)",
+    "default": "{base_url:\"\", relay_path:\"/api/api\", auth_key:\"\", verify_tls:true, max_body_bytes:4MiB, enable_batching:false}",
+    "modes": ["vercel_edge"],
+    "desktop": "read/write",
+    "android": "read/write (subset)",
+    "backend": "runtime",
+    "docs": "docs/vercel-json-relay.md",
+    "validation": "base_url must be set; auth_key required; relay_path required",
+    "examples": ["config.vercel-edge.example.json"],
+    "nested_fields": {
+      "auth_key": {
+        "type": "string",
+        "docs": "docs/vercel-json-relay.md",
+        "validation": "required; shared secret matching serverless AUTH_KEY"
+      },
+      "base_url": {
+        "type": "string (HTTPS origin)",
+        "docs": "docs/vercel-json-relay.md",
+        "validation": "deployment origin (Vercel, Netlify, or compatible)"
+      },
+      "enable_batching": {
+        "type": "bool",
+        "docs": "docs/vercel-json-relay.md",
+        "validation": "reserved for JSON batch envelope; default false"
+      },
+      "max_body_bytes": {
+        "type": "usize",
+        "docs": "docs/vercel-json-relay.md",
+        "validation": "decoded body cap per relay request; default 4MiB"
+      },
+      "relay_path": {
+        "type": "string",
+        "docs": "docs/vercel-json-relay.md",
+        "validation": "must match deployed route; default /api/api"
+      },
+      "verify_tls": {
+        "type": "bool",
+        "docs": "docs/vercel-json-relay.md",
+        "validation": "certificate verification for relay HTTPS; default true"
+      }
+    }
+  },
+  "lan_token": {
+    "type": "string | null",
+    "default": "null",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/sharing-and-per-app-routing.md",
+    "validation": "advisory; required when exposing HTTP on LAN (readiness warning)",
+    "examples": []
+  },
+  "lan_allowlist": {
+    "type": "list<string> | null",
+    "default": "null",
+    "modes": ["apps_script", "vercel_edge", "direct", "full"],
+    "desktop": "read/write",
+    "android": "read/write",
+    "backend": "runtime",
+    "docs": "docs/sharing-and-per-app-routing.md",
+    "validation": "CIDR/IP parsing; required when exposing SOCKS5 on LAN (readiness warning)",
+    "examples": []
+  },
+  "outage_reset_enabled": {
+    "type": "bool | null",
+    "default": "null",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "null uses compiled default behavior",
+    "examples": []
+  },
+  "outage_reset_failure_threshold": {
+    "type": "u32 | null",
+    "default": "null",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >0 when set",
+    "examples": []
+  },
+  "outage_reset_window_ms": {
+    "type": "u64 | null",
+    "default": "null",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >0 when set",
+    "examples": []
+  },
+  "outage_reset_cooldown_ms": {
+    "type": "u64 | null",
+    "default": "null",
+    "modes": ["apps_script"],
+    "desktop": "read/write",
+    "android": "preserve (unknown-root merge)",
+    "backend": "runtime",
+    "docs": "README.md",
+    "validation": "must be >0 when set",
+    "examples": []
+  }
+}
+

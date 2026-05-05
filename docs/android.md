@@ -70,6 +70,8 @@ Setup time: **~10 minutes** if your relay backend already exists, ~15 min if you
 
 > If Android refuses with "App not installed": an old build signed with a different key is still present. `Settings → Apps → MasterHttpRelayVPN-Frankestein → Uninstall`, then try again. (From v1.0.2 onward this is a one-time thing — updates are signed with a stable key.)
 
+Official APKs are built and signed in CI; see **[`docs/android-signing.md`](android-signing.md)** for why the release keystore is committed, risks, rotation, and how that relates to GitHub Releases.
+
 ---
 
 ## 2. Deploy a relay backend
@@ -193,7 +195,10 @@ If you tap Auto-detect and it still fails on every row, your network is blocking
 
 The proxy terminates TLS locally (re-encrypts before routing through Apps Script), so your phone needs to trust a cert we minted on first run.
 
-1. In the app, tap **Install MITM certificate**.
+1. In the app, tap **Install MITM certificate** from the main-screen **Trust
+   Center** card. The card also shows whether this mode needs a user CA and
+   whether Android currently sees the exported CA fingerprint in
+   `AndroidCAStore`.
 2. The confirmation dialog shows the certificate fingerprint. Tap **Install**.
 3. The app:
    - saves a PEM copy to `Downloads/mhrv-ca.crt`
@@ -249,10 +254,24 @@ Expand **Live logs** to watch the traffic flow:
 | **SNI pool + tester** | Collapsible | Checkboxes for rotation; per-row Test + Test all |
 | **Advanced** | Collapsible | verify_ssl, log_level, parallel_relay, upstream_socks5 |
 | **Start / Stop** | Bottom row | 2-second debounce between taps |
-| **Install MITM certificate** | Below Start/Stop | Save PEM → open Settings → search "CA certificate" |
-| **Usage today (estimated)** | Below the Install button while connected | Local estimate of this device's Apps Script calls/bytes and reset countdown |
-| **Live logs** | Collapsible (below the Install button) | 500ms poll of the proxy's log ring buffer |
+| **Trust Center** | Main screen, near readiness | CA status, Android user-CA limitation, APK signing continuity, redacted support snapshot copy, support-sharing reminder, and Install/repair MITM certificate action |
+| **Usage today (estimated)** | Below the Trust Center while connected | Local estimate of this device's Apps Script calls/bytes and reset countdown |
+| **Live logs** | Collapsible (below usage) | 500ms poll of the proxy's log ring buffer |
 | **v1.0.x (version badge)** | Top bar, right | Tap to check GitHub for a newer release |
+
+### QR and deep-link config sharing
+
+Android export uses `mhrvf://` links with deflate-compressed URL-safe Base64
+JSON. Import still accepts legacy `mhrv-rs://` links so existing shared setup
+material remains usable. Pasted raw JSON is also accepted for manual transfer.
+
+The QR/deep-link path must preserve advanced fields that Android cannot edit:
+`ConfigStore.encode()` now seeds the shared JSON from `preservedUnknownRootJson`
+before writing Android-owned keys, so Desktop-only or hand-written root keys are
+not silently dropped during mobile share/export. Invalid QR/deep-link payloads
+must fail closed as `null`, not become a partial config. The no-Gradle static
+gate is `python tools/check-android-config-sharing.py`; executable coverage
+lives in `ConfigStoreTest.kt` for CI/pre-provisioned Gradle.
 
 ---
 
@@ -278,6 +297,10 @@ Full guide: [`docs/sharing-and-per-app-routing.md`](sharing-and-per-app-routing.
 ## Known limitations
 
 Read this before reporting a bug — most "it doesn't work" reports fall into one of these.
+
+### Advanced JSON from Desktop or hand edits
+
+Android removes only the root keys it explicitly maps into `MhrvConfig` (see **`ownedKeys`** in `ConfigStore.kt`) and **preserves every other root key** for export/share so expert Desktop fields are not silently dropped. CI validates **`ownedKeys`** against [`docs/config-registry.json`](config-registry.json). Full policy: [`docs/android-config-preservation.md`](android-config-preservation.md).
 
 ### Cloudflare Turnstile ("Verify you are human") loops
 
@@ -332,6 +355,24 @@ Each `/exec` has a daily execution limit (20k/day for consumer Google accounts, 
 
 By default, Android apps opt out of trusting user-installed CAs (Android 7+ `Network Security Config` default). Banking apps, Netflix, Spotify, most messengers — they'll fail with cert errors through mhrv-f. The TUN routes their traffic to us; they just refuse our leaf. Only apps that explicitly opt in (browsers, curl, some developer tools) will work. This is a general MITM-proxy limitation.
 
+The in-app **Trust Center** repeats this point on the main screen so a single
+working browser is not mistaken for universal app trust. Full tunnel mode skips
+the local user-CA requirement, but it needs the `CodeFull.gs` + `tunnel-node`
+backend path instead.
+
+The Trust Center also has **Copy redacted support snapshot**. It copies mode,
+routing, trust, deployment-count, and preservation state while omitting
+`auth_key`, serverless `AUTH_KEY`, LAN token, upstream SOCKS5, raw unknown JSON,
+and unmasked deployment IDs. Desktop/CLI support bundles remain the fuller
+diagnostic path, but this mobile snapshot is safer than sharing raw config.
+The snapshot and deployment-ID masking policy are owned by
+`android/app/src/main/java/com/farnam/mhrvf/SupportRedaction.kt`, with JVM
+contract coverage in `SupportRedactionTest.kt`; the Compose screen only calls
+that utility. Local/CI repo sanity also runs
+`python tools/check-android-support-redaction.py`, a static no-Gradle gate that
+fails if the UI reintroduces local masking helpers or the test source drops the
+core secret-omission assertions.
+
 ---
 
 ## Troubleshooting
@@ -344,7 +385,7 @@ By default, Android apps opt out of trusting user-installed CAs (Android 7+ `Net
 | JS parts of a site don't load | Pre-v1.0 OPTIONS rejection | Upgrade to v1.0.0+. If still present: Live logs → grep for `Relay failed`, report |
 | All SNIs time out in the tester | `google_ip` is stale (Google rotated the A record) | Tap **Auto-detect google_ip** |
 | SNI tester red on some rows only | Those SNIs are DPI-filtered on your network | Uncheck the failing ones in the rotation pool |
-| App closes when tapping Stop | Was a v1.0.0/1.0.1 race bug | Upgrade to v1.0.2. If still present on v1.0.2+: `adb logcat -s MhrvVpnService mhrv-crash mhrv_jni` and report |
+| App closes when tapping Stop | Lifecycle/native teardown race | Upgrade to the newest APK. Current builds send `ACTION_STOP` once, let the service call `stopSelf()` after teardown, and stop the Rust proxy before joining tun2proxy so the SOCKS5 read wakes cleanly. If still present: `adb logcat -s MhrvVpnService mhrv-crash mhrv_jni` and report |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` when upgrading | Old APK signed with a different key (pre-v1.0.2) | Uninstall first, then install the new APK. Only a one-time thing — v1.0.2 onward has a stable signature |
 | Chrome white-pages with no error | Often a rendering bug on the emulator with software GPU | Test on real hardware. Check `Live logs` to verify the relay is actually making requests |
 | Cloudflare Turnstile loop | [Known limitation](#cloudflare-turnstile-verify-you-are-human-loops) | No fix inside this architecture |

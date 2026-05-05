@@ -916,6 +916,7 @@ fn migrate_legacy_android_account_groups(value: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     fn assert_invalid_id(json: &str, id: crate::readiness::ReadinessId, target: &str) {
         let cfg: Config = serde_json::from_str(json).expect("raw config should deserialize");
@@ -964,11 +965,115 @@ mod tests {
                 include_str!("../config.google-only.example.json"),
                 Mode::Direct,
             ),
+            (
+                "config.vercel-edge.example.json",
+                include_str!("../config.vercel-edge.example.json"),
+                Mode::VercelEdge,
+            ),
         ];
 
         for (name, json, mode) in examples {
             assert_example_config_loads(name, json, mode);
         }
+    }
+
+    #[test]
+    fn config_registry_covers_all_config_keys() {
+        let registry_raw: serde_json::Value =
+            serde_json::from_str(include_str!("../docs/config-registry.json"))
+                .expect("config registry must be valid json");
+        let registry_obj = registry_raw
+            .as_object()
+            .expect("config registry must be a json object");
+        let registry_keys: BTreeSet<String> = registry_obj.keys().cloned().collect();
+
+        // Parse a minimal config through the real loader so legacy migrations apply
+        // and defaults are filled, then re-serialize to see the actual key set.
+        let cfg = Config::from_json_str(r#"{"mode":"direct"}"#).expect("minimal config must load");
+        let cfg_value = serde_json::to_value(&cfg).expect("config must serialize");
+        let cfg_obj = cfg_value
+            .as_object()
+            .expect("config must serialize as an object");
+        let cfg_keys: BTreeSet<String> = cfg_obj.keys().cloned().collect();
+
+        assert_eq!(
+            registry_keys, cfg_keys,
+            "config registry keys must exactly match serialized Config keys"
+        );
+    }
+
+    /// Locks serde defaults against `docs/platform-defaults.json` (also enforced by
+    /// `tools/check-platform-defaults.py`). Android importer defaults intentionally differ.
+    #[test]
+    fn minimal_direct_json_matches_platform_defaults_contract() {
+        let contract: serde_json::Value =
+            serde_json::from_str(include_str!("../docs/platform-defaults.json"))
+                .expect("platform-defaults.json must parse");
+        let shared = contract["shared"].as_object().expect("shared object");
+        let parity = contract["parity_shared_defaults"]
+            .as_object()
+            .expect("parity_shared_defaults object");
+        let rust_cli = contract["rust_desktop_cli"]
+            .as_object()
+            .expect("rust_desktop_cli object");
+
+        let cfg = Config::from_json_str(r#"{"mode":"direct"}"#).expect("minimal direct config");
+
+        assert_eq!(
+            cfg.google_ip.as_str(),
+            rust_cli["google_ip_default"].as_str().unwrap()
+        );
+        assert_eq!(
+            cfg.listen_port as u64,
+            rust_cli["listen_port_default"].as_u64().unwrap()
+        );
+        assert_eq!(
+            cfg.front_domain.as_str(),
+            shared["front_domain"].as_str().unwrap()
+        );
+        assert_eq!(
+            cfg.listen_host.as_str(),
+            shared["listen_host_loopback"].as_str().unwrap()
+        );
+        assert_eq!(
+            cfg.log_level.as_str(),
+            rust_cli["log_level_default"].as_str().unwrap()
+        );
+
+        assert!(rust_cli["socks5_port_when_json_field_absent"].is_null());
+        assert_eq!(cfg.socks5_port, None);
+
+        assert_eq!(
+            cfg.parallel_relay as u64,
+            rust_cli["parallel_relay_when_field_absent"]
+                .as_u64()
+                .unwrap()
+        );
+        assert_eq!(
+            cfg.coalesce_step_ms as u64,
+            rust_cli["coalesce_step_ms_when_field_absent"]
+                .as_u64()
+                .unwrap()
+        );
+        assert_eq!(
+            cfg.coalesce_max_ms as u64,
+            rust_cli["coalesce_max_ms_when_field_absent"]
+                .as_u64()
+                .unwrap()
+        );
+
+        assert_eq!(cfg.verify_ssl, parity["verify_ssl"].as_bool().unwrap());
+        assert_eq!(
+            cfg.youtube_via_relay,
+            parity["youtube_via_relay"].as_bool().unwrap()
+        );
+        assert_eq!(cfg.block_quic, parity["block_quic"].as_bool().unwrap());
+        assert_eq!(cfg.tunnel_doh, parity["tunnel_doh"].as_bool().unwrap());
+
+        assert_eq!(
+            cfg.vercel.relay_path.as_str(),
+            parity["serverless_relay_path"].as_str().unwrap()
+        );
     }
 
     #[test]

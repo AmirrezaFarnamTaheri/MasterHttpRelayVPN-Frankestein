@@ -51,6 +51,7 @@ import com.farnam.mhrvf.ReadinessRepairTargets
 import com.farnam.mhrvf.SplitMode
 import com.farnam.mhrvf.UiLang
 import com.farnam.mhrvf.VpnState
+import com.farnam.mhrvf.androidSupportSnapshot
 import androidx.compose.ui.res.stringResource
 import com.farnam.mhrvf.ui.theme.ErrRed
 import com.farnam.mhrvf.ui.theme.OkGreen
@@ -459,6 +460,9 @@ private fun androidReadinessItems(cfg: MhrvConfig, caInstalled: Boolean): List<A
 private fun androidConnectBlockerId(cfg: MhrvConfig): String? =
     androidReadinessItems(cfg, caInstalled = true).firstOrNull { !it.ok && it.blocksConnect }?.id
 
+private fun modeRequiresUserCa(mode: Mode): Boolean =
+    mode != Mode.FULL
+
 @Composable
 private fun ModeReadinessCard(cfg: MhrvConfig, caInstalled: Boolean) {
     val readiness = remember(cfg, caInstalled) { androidReadinessItems(cfg, caInstalled) }
@@ -580,6 +584,123 @@ private fun ModeReadinessCard(cfg: MhrvConfig, caInstalled: Boolean) {
     }
 }
 
+@Composable
+private fun TrustCenterCard(
+    cfg: MhrvConfig,
+    caInstalled: Boolean,
+    onInstallClick: () -> Unit,
+    onCopySupportSnapshot: () -> Unit,
+) {
+    val needsUserCa = modeRequiresUserCa(cfg.mode)
+    val statusText = when {
+        !needsUserCa -> stringResource(R.string.trust_status_full_no_ca)
+        caInstalled -> stringResource(R.string.trust_status_ca_installed)
+        else -> stringResource(R.string.trust_status_ca_missing)
+    }
+    val statusColor = when {
+        !needsUserCa || caInstalled -> OkGreen
+        else -> ErrRed
+    }
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.sec_trust_center),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                AssistChip(
+                    onClick = {},
+                    enabled = false,
+                    label = { Text(statusText, color = statusColor) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (!needsUserCa || caInstalled) {
+                                Icons.Filled.CheckCircle
+                            } else {
+                                Icons.Filled.ErrorOutline
+                            },
+                            contentDescription = null,
+                            tint = statusColor,
+                        )
+                    },
+                )
+            }
+            Text(
+                text = stringResource(R.string.trust_center_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TrustCenterRow(
+                title = stringResource(R.string.trust_android_scope_label),
+                body = stringResource(R.string.trust_android_scope_body),
+            )
+            TrustCenterRow(
+                title = stringResource(R.string.trust_signing_label),
+                body = stringResource(R.string.trust_signing_body),
+            )
+            TrustCenterRow(
+                title = stringResource(R.string.trust_support_label),
+                body = stringResource(R.string.trust_support_body),
+            )
+            OutlinedButton(
+                onClick = onCopySupportSnapshot,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.trust_copy_support_snapshot))
+            }
+            if (needsUserCa) {
+                FilledTonalButton(
+                    onClick = onInstallClick,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.trust_install_cta))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrustCenterRow(title: String, body: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.CheckCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(19.dp),
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 /**
  * UI state returned by the Activity after the CA install flow finishes,
  * so the screen can show a matching snackbar. Kept as a sum type — a raw
@@ -616,6 +737,7 @@ fun HomeScreen(
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
+    val clipboard = LocalClipboardManager.current
 
     // Persisted form state. Any edit writes back to disk immediately —
     // cheap at this write rate, avoids "I tapped Start before saving" bugs.
@@ -856,6 +978,19 @@ fun HomeScreen(
             )
             ModeOverviewCard(mode = cfg.mode, connectionMode = cfg.connectionMode)
             ModeReadinessCard(cfg, caInstalled)
+            TrustCenterCard(
+                cfg = cfg,
+                caInstalled = caInstalled,
+                onInstallClick = { showInstallDialog = true },
+                onCopySupportSnapshot = {
+                    clipboard.setText(AnnotatedString(androidSupportSnapshot(cfg, caInstalled)))
+                    Toast.makeText(
+                        ctx,
+                        ctx.getString(R.string.snack_support_snapshot_copied),
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                },
+            )
             ConnectActionButton()
 
             Spacer(Modifier.height(4.dp))
@@ -1027,18 +1162,6 @@ fun HomeScreen(
                     cfg = cfg,
                     onChange = ::persist,
                 )
-            }
-
-            Spacer(Modifier.height(4.dp))
-            // Secondary accent button — FilledTonalButton reads as a lower-
-            // priority action next to Start/Stop, matching the desktop UI's
-            // visual hierarchy where Install CA is offered as a helper
-            // button rather than the headline action.
-            FilledTonalButton(
-                onClick = { showInstallDialog = true },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.btn_install_mitm))
             }
 
             UsageTodayCard()

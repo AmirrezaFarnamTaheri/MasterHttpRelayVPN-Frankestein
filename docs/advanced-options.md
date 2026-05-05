@@ -231,8 +231,10 @@ Full-mode batch coalescing window for the client tunnel multiplexer.
 
 - `coalesce_step_ms` is the soft wait added after a new tunnel op arrives.
 - `coalesce_max_ms` is the hard cap for one batch.
-- Defaults are `40` and `1000`. Lower values reduce input latency; higher
-  values can reduce Apps Script batch count when many sessions wake together.
+- Defaults are `10` and `1000`. The short step avoids dead air on
+  download-heavy batches while the hard cap still lets bursty uploads or
+  staggered replies share a batch. Users who prefer older, more conservative
+  packing can set `coalesce_step_ms` to `40`.
 
 ## Network Reachability
 

@@ -254,6 +254,17 @@ Doctor/Test again.
 | External XHTTP | Port / transport / mode | `443` / `xhttp` / `auto` |
 | External XHTTP | `allowInsecure` | `false` first; `true` only for intentional mismatched-front tests |
 
+## Verification Notes
+
+The desktop **Test Relay** action is an Apps Script / serverless JSON probe. It
+does not run in `full` mode because a direct relay probe would not prove the
+actual data plane through `CodeFull.gs` and `tunnel-node`, and it does not run in
+`direct` mode because there is no relay backend to test. For `full`, start the
+proxy and load an IP-check page such as `https://whatismyipaddress.com` through
+the local proxy; the displayed IP should be the tunnel-node/VPS egress. For
+`direct`, verify by loading a known routed host such as `https://www.google.com`
+or a domain listed in a validated `fronting_groups` block.
+
 ## Setup Recipes
 
 ### Recipe: Apps Script
@@ -329,6 +340,13 @@ Details: [`docs/vercel-xhttp-relay.md`](vercel-xhttp-relay.md).
 
 Details: [`docs/netlify-xhttp-relay.md`](netlify-xhttp-relay.md) and
 [`docs/field-notes.md`](field-notes.md).
+
+## Official YouTube And YT Music Apps (external patching)
+
+Browser traffic through `mhrv-f` follows the modes above. **Official Google YouTube apps**
+often use **Cronet** and differ from Chrome-like TLS paths — MITM/VPN behavior may not match browser expectations.
+
+Third-party **GPL-licensed Cronet patches** (research-only; not shipped or endorsed here) are summarized in **[`docs/youtube-external-patching.md`](youtube-external-patching.md)** and classified under **[`docs/donor-absorption-matrix.md`](donor-absorption-matrix.md)**.
 
 ## Per-App And LAN Behavior
 

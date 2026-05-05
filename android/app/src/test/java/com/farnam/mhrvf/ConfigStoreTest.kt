@@ -3,6 +3,8 @@ package com.farnam.mhrvf
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -163,5 +165,55 @@ class ConfigStoreTest {
             "share-secret",
             shared.getJSONArray("account_groups").getJSONObject(0).getString("auth_key"),
         )
+    }
+
+    @Test
+    fun deepLinkEncodeUsesCurrentSchemeAndPreservesAdvancedRoots() {
+        val encoded = ConfigStore.encode(
+            MhrvConfig(
+                mode = Mode.FULL,
+                appsScriptUrls = listOf("AKfycb_deeplink"),
+                authKey = "deep-secret",
+                lanToken = "lan-token",
+                preservedUnknownRootJson = """{"future_backend":{"enabled":true},"desktop_only":"keep"}""",
+            ),
+        )
+
+        assertTrue(encoded.startsWith("mhrvf://"))
+        val decoded = ConfigStore.decode(encoded)
+        assertNotNull(decoded)
+        val saved = JSONObject(decoded!!.toJson())
+        assertEquals(Mode.FULL, decoded.mode)
+        assertTrue(saved.has("future_backend"))
+        assertEquals("keep", saved.getString("desktop_only"))
+        assertEquals("lan-token", saved.getString("lan_token"))
+        assertEquals(
+            "deep-secret",
+            saved.getJSONArray("account_groups").getJSONObject(0).getString("auth_key"),
+        )
+    }
+
+    @Test
+    fun deepLinkDecodeAcceptsLegacyScheme() {
+        val current = ConfigStore.encode(
+            MhrvConfig(
+                mode = Mode.DIRECT,
+                frontDomain = "mail.google.com",
+                youtubeViaRelay = true,
+            ),
+        )
+        val legacy = current.replaceFirst("mhrvf://", "mhrv-rs://")
+
+        val decoded = ConfigStore.decode(legacy)
+        assertNotNull(decoded)
+        assertEquals(Mode.DIRECT, decoded!!.mode)
+        assertEquals("mail.google.com", decoded.frontDomain)
+        assertTrue(decoded.youtubeViaRelay)
+    }
+
+    @Test
+    fun decodeRejectsInvalidQrPayload() {
+        assertNull(ConfigStore.decode("mhrvf://not-valid-base64"))
+        assertNull(ConfigStore.decode("mhrv-rs://not-valid-base64"))
     }
 }

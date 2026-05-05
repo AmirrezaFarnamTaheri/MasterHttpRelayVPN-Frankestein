@@ -15,7 +15,11 @@ Built-in direct mode already knows the Google edge through:
 ```
 
 `fronting_groups` extends the same idea to other multi-tenant edges such as
-Vercel, Fastly, and Netlify's CloudFront-backed sites.
+Vercel, Fastly, and Netlify's CloudFront-backed sites. The bundled Fastly
+starter list intentionally includes several families that commonly sit on
+Fastly anycast edges (`reddit.com`, Pinterest image domains, CNN, BuzzFeed,
+GitHub asset domains, PyPI), but they are still examples: keep only the domains
+that pass in your network.
 
 ## Example
 

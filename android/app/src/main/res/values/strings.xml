@@ -28,6 +28,7 @@
     <string name="sec_live_logs">Live logs</string>
     <string name="sec_how_to_use">Help &amp; walkthrough</string>
     <string name="sec_app_splitting">App splitting</string>
+    <string name="sec_trust_center">Trust Center</string>
 
     <!-- Primary actions -->
     <string name="btn_connect">Connect</string>
@@ -94,6 +95,18 @@
     <string name="repair_full_udp_body">Full-mode UDP uses SOCKS5 UDP ASSOCIATE. Configure a SOCKS5 port if apps need UDP, then test with a UDP-capable client.</string>
     <string name="repair_full_health_label">Verify full tunnel health</string>
     <string name="repair_full_health_body">Start full mode, open a public IP-check page, and compare it with tunnel-node logs. The IP should match the VPS or tunnel-node egress.</string>
+    <string name="trust_status_full_no_ca">no local CA needed</string>
+    <string name="trust_status_ca_installed">CA trusted</string>
+    <string name="trust_status_ca_missing">CA needs install</string>
+    <string name="trust_center_hint">Trust Center explains the security boundary for this phone: the user CA, Android app trust behavior, release-signing continuity, and what support data is safe to share.</string>
+    <string name="trust_android_scope_label">Android user CA scope</string>
+    <string name="trust_android_scope_body">Browsers and developer tools commonly trust user CAs. Many banking, streaming, and chat apps ignore them on Android 7+, so certificate errors in one app can be expected even when a browser works.</string>
+    <string name="trust_signing_label">APK signing continuity</string>
+    <string name="trust_signing_body">Official APKs are signed by the release workflow using the documented committed keystore policy; CI releases remain the source of truth for install-over updates.</string>
+    <string name="trust_support_label">Support data discipline</string>
+    <string name="trust_support_body">Desktop and CLI support bundles include trust.json and redacted config previews. On Android, review exported configs and copied logs before sharing because auth keys and LAN tokens are sensitive.</string>
+    <string name="trust_copy_support_snapshot">Copy redacted support snapshot</string>
+    <string name="trust_install_cta">Install / repair MITM certificate</string>
     <string name="dialog_export_title">Export config</string>
     <string name="dialog_export_warning">This includes your auth key. Only share with people you trust.</string>
     <string name="dialog_import_title">Import config?</string>
@@ -197,6 +210,7 @@
     <string name="snack_cert_saved_to">Saved to %1$s.</string>
     <string name="snack_cert_settings_hint">In Settings, search for “CA certificate” and install from there — NOT “VPN &amp; app user certificate” or “Wi‑Fi”.</string>
     <string name="snack_cert_tap_install_again">Tap Install again to retry.</string>
+    <string name="snack_support_snapshot_copied">Redacted support snapshot copied</string>
 
     <!-- Update check summary -->
     <string name="update_check_failed_no_response">Update check failed (no response)</string>

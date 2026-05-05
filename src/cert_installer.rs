@@ -952,6 +952,62 @@ impl NssReport {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct BrowserTrustProbe {
+    pub certutil_available: bool,
+    pub firefox_profiles: Vec<FirefoxProfileProbe>,
+    pub chrome_nssdb_present: bool,
+    pub chrome_nssdb_has_cert: Option<bool>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FirefoxProfileProbe {
+    pub path: String,
+    pub has_cert_db: bool,
+    pub nss_has_cert: Option<bool>,
+    pub enterprise_roots_marker: bool,
+    pub enterprise_roots_user_owned: bool,
+}
+
+/// Read-only browser trust probe for Trust Center/support-bundle surfaces.
+///
+/// This does not install/remove certificates and does not edit Firefox
+/// `user.js`; mutation remains limited to install/remove paths.
+pub fn browser_trust_probe() -> BrowserTrustProbe {
+    let certutil_available = has_nss_certutil();
+    let firefox_profiles = firefox_profile_dirs()
+        .into_iter()
+        .map(|profile| {
+            let user_js = profile.join("user.js");
+            let existing = std::fs::read_to_string(&user_js).unwrap_or_default();
+            let has_cert_db =
+                profile.join("cert9.db").exists() || profile.join("cert8.db").exists();
+            let nss_has_cert = if certutil_available && has_cert_db {
+                nss_dir_arg_for_profile(&profile).map(|dir_arg| nss_cert_present(&dir_arg))
+            } else {
+                None
+            };
+            FirefoxProfileProbe {
+                path: profile.display().to_string(),
+                has_cert_db,
+                nss_has_cert,
+                enterprise_roots_marker: contains_our_block(&existing),
+                enterprise_roots_user_owned: has_bare_enterprise_roots(&existing),
+            }
+        })
+        .collect();
+    let chrome_nssdb_present = chrome_nssdb_present();
+    let chrome_nssdb_has_cert = chrome_nssdb_dir_arg()
+        .filter(|_| certutil_available)
+        .map(|dir_arg| nss_cert_present(&dir_arg));
+    BrowserTrustProbe {
+        certutil_available,
+        firefox_profiles,
+        chrome_nssdb_present,
+        chrome_nssdb_has_cert,
+    }
+}
+
 fn remove_nss_stores() -> NssReport {
     disable_firefox_enterprise_roots();
 
@@ -983,15 +1039,10 @@ fn remove_nss_stores() -> NssReport {
     }
     let mut report = NssReport::default();
     for p in firefox_profile_dirs() {
-        report.tried += 1;
-        let prefix = if p.join("cert9.db").exists() {
-            "sql:"
-        } else if p.join("cert8.db").exists() {
-            ""
-        } else {
+        let Some(dir_arg) = nss_dir_arg_for_profile(&p) else {
             continue;
         };
-        let dir_arg = format!("{}{}", prefix, p.display());
+        report.tried += 1;
         if remove_nss_in_dir(&dir_arg) {
             report.ok += 1;
         }
@@ -1016,6 +1067,40 @@ fn remove_nss_stores() -> NssReport {
         );
     }
     report
+}
+
+fn nss_dir_arg_for_profile(profile: &Path) -> Option<String> {
+    if profile.join("cert9.db").exists() {
+        Some(format!("sql:{}", profile.display()))
+    } else if profile.join("cert8.db").exists() {
+        Some(profile.display().to_string())
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn chrome_nssdb_dir_arg() -> Option<String> {
+    let nssdb = chrome_nssdb_path()?;
+    (nssdb.join("cert9.db").exists() || nssdb.join("cert8.db").exists())
+        .then(|| format!("sql:{}", nssdb.display()))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn chrome_nssdb_dir_arg() -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn chrome_nssdb_present() -> bool {
+    chrome_nssdb_path()
+        .map(|p| p.join("cert9.db").exists() || p.join("cert8.db").exists())
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn chrome_nssdb_present() -> bool {
+    false
 }
 
 fn disable_firefox_enterprise_roots() {

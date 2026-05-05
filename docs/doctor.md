@@ -3,7 +3,9 @@
 `mhrv-f doctor` checks the common first-run and daily-use failure modes and
 prints actionable fixes. It is available in the CLI and in the desktop UI.
 The shared ID/severity/repair contract is generated in
-[`docs/readiness-matrix.md`](readiness-matrix.md).
+[`docs/readiness-matrix.md`](readiness-matrix.md). Deployable backends, compat
+probes, and the **target** unified health JSON shape are summarized in
+[`docs/backend-registry.md`](backend-registry.md).
 
 ## Run It
 
@@ -29,6 +31,39 @@ In the desktop UI, click **Doctor** and read the **Recent log** panel. Use
 - `vercel_edge` returns HTML/protection pages instead of JSON
 - you are not sure whether the relay credentials are correct
 - you changed modes and want a sanity check
+
+## Support Bundle Preview
+
+For a terminal-friendly Trust Center summary before exporting anything, run:
+
+```bash
+./mhrv-f trust-center
+./mhrv-f trust-center --json
+```
+
+This prints the same shared snapshot used by Desktop Help and the exported
+`trust.json`: local CA requirement/status, browser trust probe availability,
+Firefox profile/NSS DB counts, redacted per-profile NSS details, mhrv-f CA
+presence inside NSS stores when `certutil` can query them, Android trust
+caveats, signing policy, and support-bundle redaction counts.
+
+Before exporting a support bundle, preview the file list and redaction policy:
+
+```bash
+./mhrv-f support-bundle --preview
+```
+
+The real export writes a directory with `manifest.json`, `meta.json`,
+`config.redacted.json`, `doctor.json`, `status.json`, `trust.json`, and
+`recent-logs.txt`. Review the directory before sharing it; auth keys are
+redacted, LAN tokens are removed, deployment IDs are masked, private CA keys are
+not included, and recent logs are bounded/redacted when a persistent log file is
+available.
+
+The Rust redaction helpers live in `src/redaction.rs`. Support bundles and
+Doctor tunnel-node URL display share those helpers for deployment-ID masking,
+secret replacement, LAN-token removal, serverless auth-key replacement, and URL
+credential stripping.
 
 ## What It Checks
 

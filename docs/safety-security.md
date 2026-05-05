@@ -1,5 +1,7 @@
 # Safety & security (plain language)
 
+Hub page for certificate trust surfaces and roadmap UX: **[`docs/trust-center.md`](trust-center.md)**.
+
 ## What this tool does (and why a CA is involved)
 In Apps Script (MITM) mode, **MasterHttpRelayVPN-Frankestein** decrypts HTTPS *locally on your device*, relays the bytes through your Apps Script deployment, then encrypts again toward the real destination.
 

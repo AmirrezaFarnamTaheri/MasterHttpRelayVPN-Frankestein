@@ -187,15 +187,15 @@ data class MhrvConfig(
     /** Native serverless JSON relay fields; serialized under Rust's `vercel` key. */
     val serverlessBaseUrl: String = "",
     val serverlessAuthKey: String = "",
-    val serverlessRelayPath: String = "/api/api",
+    val serverlessRelayPath: String = DEFAULT_RELAY_PATH,
     val frontDomain: String = "www.google.com",
     /** Rotation pool of SNI hostnames; empty means "let Rust auto-expand". */
     val sniHosts: List<String> = emptyList(),
-    val googleIp: String = "142.251.36.68",
+    val googleIp: String = DEFAULT_ANDROID_GOOGLE_IP,
     val verifySsl: Boolean = true,
     val logLevel: String = "info",
     val parallelRelay: Int = 1,
-    val coalesceStepMs: Int = 40,
+    val coalesceStepMs: Int = 10,
     val coalesceMaxMs: Int = 1000,
     val upstreamSocks5: String = "",
     /**
@@ -226,6 +226,15 @@ data class MhrvConfig(
     val bypassDohHosts: List<String> = emptyList(),
     /** Raw config-only fronting_groups JSON; preserved even though Android has no editor yet. */
     val frontingGroupsJson: String = "",
+    /**
+     * Preserved root-level unknown JSON fields.
+     *
+     * Android edits a subset of the full config. When importing a Desktop-created
+     * config (or a hand-edited file), we must not accidentally drop advanced
+     * fields we don't expose yet. We preserve any unrecognized keys here and
+     * merge them back on save/share.
+     */
+    val preservedUnknownRootJson: String = "",
     /** VPN_TUN (everything routed) vs PROXY_ONLY (user configures per-app). */
     val connectionMode: ConnectionMode = ConnectionMode.VPN_TUN,
     /** ALL / ONLY / EXCEPT — scope of app splitting inside VPN_TUN mode. */
@@ -245,7 +254,15 @@ data class MhrvConfig(
             .map { extractScriptId(it) }
             .filter { it.isNotEmpty() }
             .distinct()
-        val obj = JSONObject().apply {
+        val obj = if (preservedUnknownRootJson.isNotBlank()) {
+            try {
+                JSONObject(preservedUnknownRootJson)
+            } catch (_: Throwable) {
+                JSONObject()
+            }
+        } else {
+            JSONObject()
+        }.apply {
             // `mode` is required — without it serde errors with
             // "missing field `mode`" and startProxy silently returns 0.
             put("mode", when (mode) {
@@ -257,6 +274,9 @@ data class MhrvConfig(
             put("listen_host", listenHost)
             put("listen_port", listenPort)
             socks5Port?.let { put("socks5_port", it) }
+            // Ensure legacy keys do not survive in preserved unknown JSON.
+            remove("script_ids")
+            remove("auth_key")
             // Canonical Apps Script / full-mode credentials. Android edits a
             // simple primary group, but preserves imported Desktop groups.
             canonicalAccountGroups(ids, authKey, preservedAccountGroupsJson)?.let {
@@ -276,7 +296,7 @@ data class MhrvConfig(
             put("verify_ssl", verifySsl)
             put("log_level", logLevel)
             put("parallel_relay", parallelRelay)
-            if (coalesceStepMs != 40) put("coalesce_step_ms", coalesceStepMs)
+            if (coalesceStepMs != 10) put("coalesce_step_ms", coalesceStepMs)
             if (coalesceMaxMs != 1000) put("coalesce_max_ms", coalesceMaxMs)
             if (upstreamSocks5.isNotBlank()) {
                 put("upstream_socks5", upstreamSocks5.trim())
@@ -381,7 +401,7 @@ object ConfigStore {
                 verifySsl = obj.optBoolean("verify_ssl", true),
                 logLevel = obj.optString("log_level", "info"),
                 parallelRelay = obj.optInt("parallel_relay", 1),
-                coalesceStepMs = obj.optInt("coalesce_step_ms", 40),
+                coalesceStepMs = obj.optInt("coalesce_step_ms", 10),
                 coalesceMaxMs = obj.optInt("coalesce_max_ms", 1000),
                 upstreamSocks5 = obj.optString("upstream_socks5", ""),
                 youtubeViaRelay = obj.optBoolean("youtube_via_relay", false),
@@ -424,7 +444,15 @@ object ConfigStore {
     }
     fun encode(cfg: MhrvConfig): String {
         val defaults = MhrvConfig()
-        val obj = JSONObject()
+        val obj = if (cfg.preservedUnknownRootJson.isNotBlank()) {
+            try {
+                JSONObject(cfg.preservedUnknownRootJson)
+            } catch (_: Throwable) {
+                JSONObject()
+            }
+        } else {
+            JSONObject()
+        }
         obj.put("mode", when (cfg.mode) {
             Mode.APPS_SCRIPT -> "apps_script"
             Mode.SERVERLESS_JSON -> "vercel_edge"
@@ -505,6 +533,49 @@ object ConfigStore {
         }
     }
     internal fun loadFromJson(obj: JSONObject): MhrvConfig {
+        // Preserve unknown root-level keys by removing the keys Android owns.
+        // This prevents silent loss of advanced config written by Desktop or hand edits.
+        val preserved = JSONObject(obj.toString())
+        val ownedKeys = listOf(
+            // canonical / runtime keys Android edits
+            "mode",
+            "listen_host",
+            "listen_port",
+            "socks5_port",
+            "account_groups",
+            "vercel",
+            "front_domain",
+            "sni_hosts",
+            "google_ip",
+            "verify_ssl",
+            "log_level",
+            "parallel_relay",
+            "coalesce_step_ms",
+            "coalesce_max_ms",
+            "upstream_socks5",
+            "youtube_via_relay",
+            "passthrough_hosts",
+            "lan_token",
+            "lan_allowlist",
+            "block_quic",
+            "tunnel_doh",
+            "bypass_doh_hosts",
+            "fronting_groups",
+            "fetch_ips_from_api",
+            "max_ips_to_scan",
+            "scan_batch_size",
+            // Android-only wrapper keys
+            "connection_mode",
+            "split_mode",
+            "split_apps",
+            "ui_lang",
+            // legacy import-only keys
+            "script_ids",
+            "auth_key"
+        )
+        ownedKeys.forEach { preserved.remove(it) }
+        val preservedUnknownRootJson = if (preserved.length() > 0) preserved.toString() else ""
+
         val accountGroups = projectAccountGroups(obj)
         val sni = obj.optJSONArray("sni_hosts")?.let { arr ->
             buildList { for (i in 0 until arr.length()) add(arr.optString(i)) }
@@ -522,6 +593,7 @@ object ConfigStore {
             appsScriptUrls = accountGroups.urls,
             authKey = accountGroups.authKey,
             preservedAccountGroupsJson = accountGroups.preservedJson,
+            preservedUnknownRootJson = preservedUnknownRootJson,
             serverlessBaseUrl = obj.optJSONObject("vercel")?.optString("base_url", "") ?: "",
             serverlessAuthKey = obj.optJSONObject("vercel")?.optString("auth_key", "") ?: "",
             serverlessRelayPath = obj.optJSONObject("vercel")?.optString("relay_path", DEFAULT_RELAY_PATH)
@@ -532,7 +604,7 @@ object ConfigStore {
             verifySsl = obj.optBoolean("verify_ssl", true),
             logLevel = obj.optString("log_level", "info"),
             parallelRelay = obj.optInt("parallel_relay", 1),
-            coalesceStepMs = obj.optInt("coalesce_step_ms", 40),
+            coalesceStepMs = obj.optInt("coalesce_step_ms", 10),
             coalesceMaxMs = obj.optInt("coalesce_max_ms", 1000),
             upstreamSocks5 = obj.optString("upstream_socks5", ""),
             youtubeViaRelay = obj.optBoolean("youtube_via_relay", false),
@@ -569,8 +641,8 @@ object ConfigStore {
 }
 /**
  * Default SNI rotation pool. Mirrors `DEFAULT_GOOGLE_SNI_POOL` from the
- * Rust `domain_fronter` module — keep the lists in sync, or leave the
- * user's sniHosts empty and let Rust auto-expand.
+ * Rust `domain_fronter` module. CI (`tools/check-sni-default-pool.py`) rejects
+ * drift; otherwise leave SNI hosts unset and rely on JNI/Rust defaults.
  */
 val DEFAULT_SNI_POOL: List<String> = listOf(
     "www.google.com",
