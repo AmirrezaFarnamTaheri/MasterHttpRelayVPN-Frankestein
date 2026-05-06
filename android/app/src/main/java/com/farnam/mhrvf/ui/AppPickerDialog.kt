@@ -11,8 +11,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.farnam.mhrvf.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -72,13 +74,13 @@ fun AppPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Pick apps (${selected.size} selected)") },
+        title = { Text(stringResource(R.string.app_picker_title, selected.size)) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Search") },
+                    label = { Text(stringResource(R.string.app_picker_search)) },
                     singleLine = true,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                         imeAction = ImeAction.Search,
@@ -93,7 +95,10 @@ fun AppPickerDialog(
                         checked = showSystem,
                         onCheckedChange = { showSystem = it },
                     )
-                    Text("Show system apps", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        stringResource(R.string.app_picker_show_system_apps),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
                 if (loading) {
                     Box(
@@ -124,10 +129,12 @@ fun AppPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(selected.toList()) }) { Text("Save") }
+            TextButton(onClick = { onSave(selected.toList()) }) {
+                Text(stringResource(R.string.app_picker_save))
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.btn_cancel)) }
         },
     )
 }

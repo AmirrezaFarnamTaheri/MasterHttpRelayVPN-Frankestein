@@ -1,6 +1,6 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -20,42 +20,42 @@ use mhrv_jni::domain_fronter::{DomainFronter, DEFAULT_GOOGLE_SNI_POOL};
 use mhrv_jni::lan_utils::{detect_lan_ip, is_loopback_only, is_share_on_lan};
 use mhrv_jni::mitm::{MitmCertManager, CA_CERT_FILE};
 use mhrv_jni::proxy_server::ProxyServer;
-use mhrv_jni::readiness;
-use mhrv_jni::trust_center::{self, TrustStatus};
-use mhrv_jni::xhttp_cloud_deploy::{self, XhttpDeployWorkerMsg};
-use mhrv_jni::{doctor, scan_ips, scan_sni, support_bundle, test_cmd};
+use mhrv_jni::{doctor, scan_ips, scan_sni, test_cmd};
+
+mod ui_doctor;
+mod ui_format;
+mod ui_fs;
+mod ui_help;
+mod ui_mode;
+mod ui_monitor;
+mod ui_setup;
+mod ui_style;
+mod ui_trust;
+mod ui_xhttp;
+
+use ui_doctor::{doctor_level_label, render_doctor_summary_card};
+use ui_format::{fmt_bytes, fmt_duration};
+use ui_fs::{downloads_dir, reveal_in_file_manager};
+use ui_help::{backend_tool_entries, help_walkthrough, render_tool_help_row};
+use ui_mode::{ghost_action, info_chip, mode_dashboard_panel, mode_summary, mode_summary_panel};
+use ui_monitor::{
+    degradation_changes, notable_failure_lines, quota_calls_per_hour, traffic_stat_rows,
+};
+use ui_setup::show_first_run_wizard;
+use ui_style::{
+    apply_ui_theme, form_row, help_callout, help_muted, help_subheading, primary_button, section,
+    ACCENT, ACCENT_MINT, ACCENT_WARM, CARD_FILL, CARD_STROKE, CARD_STROKE_HI, ERR_RED,
+    HEADER_SHADOW, OK_GREEN, SURFACE_SHADOW, TEXT_LABEL, TEXT_MAIN, TEXT_MUTED,
+};
+use ui_trust::trust_center_tab;
+use ui_xhttp::{
+    poll_xhttp_cloud_deploy, xhttp_vless_generator, XhttpDeployPipe, XhttpGeneratorForm,
+};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const WIN_WIDTH: f32 = 900.0;
 const WIN_HEIGHT: f32 = 968.0;
 const LOG_MAX: usize = 200;
-const NETLIFY_XHTTP_CANDIDATES: &[&str] = &[
-    "kubernetes.io",
-    "helm.sh",
-    "letsencrypt.org",
-    "docs.helm.sh",
-    "kubectl.docs.kubernetes.io",
-    "blog.helm.sh",
-    "kind.sigs.k8s.io",
-    "cluster-api.sigs.k8s.io",
-    "krew.sigs.k8s.io",
-    "gateway-api.sigs.k8s.io",
-    "scheduler-plugins.sigs.k8s.io",
-    "kustomize.sigs.k8s.io",
-    "image-builder.sigs.k8s.io",
-];
-const VERCEL_XHTTP_CANDIDATES: &[&str] = &[
-    "community.vercel.com",
-    "analytics.vercel.com",
-    "botid.vercel.com",
-    "blog.vercel.com",
-    "app.vercel.com",
-    "api.vercel.com",
-    "ai.vercel.com",
-    "cursor.com",
-    "nextjs.org",
-    "react.dev",
-];
 
 fn main() -> eframe::Result<()> {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -136,6 +136,8 @@ struct UiState {
     started_at: Option<Instant>,
     last_stats: Option<mhrv_jni::domain_fronter::StatsSnapshot>,
     last_per_site: Vec<(String, mhrv_jni::domain_fronter::HostStat)>,
+    last_doctor_report: Option<doctor::DoctorReport>,
+    last_doctor_at: Option<Instant>,
     log: VecDeque<String>,
     /// Result + timestamp for transient status banners (auto-hide after 10s).
     ca_trusted: Option<bool>,
@@ -176,7 +178,7 @@ enum SniProbeState {
     Failed(String),
 }
 
-enum Cmd {
+pub(crate) enum Cmd {
     Start(Config),
     Stop,
     Test(Config),
@@ -216,12 +218,6 @@ enum Cmd {
     },
 }
 
-#[derive(Default)]
-struct XhttpDeployPipe {
-    rx: Option<Receiver<XhttpDeployWorkerMsg>>,
-    busy: bool,
-}
-
 struct App {
     shared: Arc<Shared>,
     cmd_tx: Sender<Cmd>,
@@ -234,7 +230,7 @@ struct App {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum UiTab {
+pub(crate) enum UiTab {
     Setup,
     Network,
     Advanced,
@@ -244,28 +240,28 @@ enum UiTab {
 }
 
 #[derive(Clone)]
-struct FormState {
+pub(crate) struct FormState {
     /// `"apps_script"` (default), `"vercel_edge"`, `"direct"`, or `"full"`.
     /// Controls whether a relay is wired up. `direct` tolerates empty
     /// Apps Script config because it only uses the SNI-rewrite path.
-    mode: String,
-    google_ip: String,
-    front_domain: String,
-    listen_host: String,
-    listen_port: String,
-    socks5_port: String,
+    pub(crate) mode: String,
+    pub(crate) google_ip: String,
+    pub(crate) front_domain: String,
+    pub(crate) listen_host: String,
+    pub(crate) listen_port: String,
+    pub(crate) socks5_port: String,
     log_level: String,
     verify_ssl: bool,
     enable_batching: bool,
-    vercel_base_url: String,
-    vercel_relay_path: String,
-    vercel_auth_key: String,
+    pub(crate) vercel_base_url: String,
+    pub(crate) vercel_relay_path: String,
+    pub(crate) vercel_auth_key: String,
     vercel_verify_tls: bool,
-    vercel_max_body_mb: u32,
+    pub(crate) vercel_max_body_mb: u32,
     vercel_enable_batching: bool,
-    show_vercel_auth_key: bool,
-    show_first_run_wizard: bool,
-    wizard_step: usize,
+    pub(crate) show_vercel_auth_key: bool,
+    pub(crate) show_first_run_wizard: bool,
+    pub(crate) wizard_step: usize,
     upstream_socks5: String,
     parallel_relay: u8,
     coalesce_step_ms: u16,
@@ -304,8 +300,8 @@ struct FormState {
     /// erase a hand-edited Vercel/Fastly/Netlify catalog.
     fronting_groups: Vec<FrontingGroup>,
     domain_overrides: Vec<DomainOverride>,
-    lan_token: Option<String>,
-    lan_allowlist: Option<Vec<String>>,
+    pub(crate) lan_token: Option<String>,
+    pub(crate) lan_allowlist: Option<Vec<String>>,
     outage_reset_enabled: Option<bool>,
     outage_reset_failure_threshold: Option<u32>,
     outage_reset_window_ms: Option<u64>,
@@ -313,7 +309,7 @@ struct FormState {
     relay_rate_limit_qps: Option<f64>,
     relay_rate_limit_burst: Option<u32>,
     // Multi-account Apps Script groups (canonical; saved to `account_groups`).
-    account_groups: Vec<AccountGroupForm>,
+    pub(crate) account_groups: Vec<AccountGroupForm>,
     // Profiles UI
     profile_name: String,
     profiles: Vec<String>,
@@ -322,57 +318,13 @@ struct FormState {
 }
 
 #[derive(Clone)]
-struct AccountGroupForm {
-    label: String,
-    enabled: bool,
-    weight: u8,
-    auth_key: String,
-    script_ids: String, // one per line
-    show_auth_key: bool,
-}
-
-#[derive(Clone)]
-struct XhttpGeneratorForm {
-    platform: String,
-    uuid: String,
-    relay_host: String,
-    target_domain: String,
-    path: String,
-    name_prefix: String,
-    allow_insecure: bool,
-    candidates: String,
-    output: String,
-    deploy_notes: String,
-    /// `manual` | `vercel_api` | `netlify_api`
-    deploy_tab: String,
-    deploy_api_token: String,
-    show_deploy_api_token: bool,
-    randomize_bundle_names: bool,
-    deploy_log: String,
-    deploy_last_host: String,
-}
-
-impl Default for XhttpGeneratorForm {
-    fn default() -> Self {
-        Self {
-            platform: "netlify".into(),
-            uuid: String::new(),
-            relay_host: String::new(),
-            target_domain: String::new(),
-            path: "/p4r34m".into(),
-            name_prefix: "netlify-xhttp".into(),
-            allow_insecure: true,
-            candidates: NETLIFY_XHTTP_CANDIDATES.join("\n"),
-            output: String::new(),
-            deploy_notes: String::new(),
-            deploy_tab: "manual".into(),
-            deploy_api_token: String::new(),
-            show_deploy_api_token: false,
-            randomize_bundle_names: false,
-            deploy_log: String::new(),
-            deploy_last_host: String::new(),
-        }
-    }
+pub(crate) struct AccountGroupForm {
+    pub(crate) label: String,
+    pub(crate) enabled: bool,
+    pub(crate) weight: u8,
+    pub(crate) auth_key: String,
+    pub(crate) script_ids: String, // one per line
+    pub(crate) show_auth_key: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -381,7 +333,7 @@ struct SniRow {
     enabled: bool,
 }
 
-fn load_form() -> (FormState, Option<String>) {
+pub(crate) fn load_form() -> (FormState, Option<String>) {
     // Try the user-data config first, then the cwd fallback. Report WHY load
     // fails so the user isn't silently shown a blank form (issue: user reports
     // 'settings saved to file but not loaded back'). Without this signal the
@@ -615,7 +567,7 @@ fn sni_pool_for_form(user: Option<&[String]>, front_domain: &str) -> Vec<SniRow>
 }
 
 impl FormState {
-    fn to_config(&self) -> Result<Config, String> {
+    pub(crate) fn to_config(&self) -> Result<Config, String> {
         let is_direct = self.mode == "direct" || self.mode == "google_only";
         let is_vercel_edge = self.mode == "vercel_edge";
         if !is_direct && !is_vercel_edge {
@@ -1149,365 +1101,6 @@ mod config_wire_tests {
         assert_eq!(value["fronting_groups"][0]["name"], "vercel");
         assert_eq!(value["domain_overrides"][0]["never_chunk"], true);
     }
-
-    #[test]
-    fn desktop_dashboard_uses_shared_readiness_ids() {
-        let (mut form, _) = load_form();
-        form.mode = "apps_script".into();
-        form.listen_host = "127.0.0.1".into();
-        form.listen_port = "8085".into();
-        form.account_groups = vec![AccountGroupForm {
-            label: "primary".into(),
-            enabled: true,
-            weight: 1,
-            auth_key: "test-auth-key-please-change-32chars".into(),
-            script_ids: "AKfycb_primary".into(),
-            show_auth_key: false,
-        }];
-
-        let dashboard = mode_dashboard(&form);
-        let ids: Vec<_> = dashboard.requirements.iter().map(|item| item.id).collect();
-        assert_eq!(
-            &ids[..4],
-            vec![
-                readiness::ACCOUNT_GROUPS_ENABLED,
-                readiness::ACCOUNT_GROUPS_SCRIPT_IDS,
-                readiness::ACCOUNT_GROUPS_AUTH_KEY,
-                readiness::LOCAL_LISTENER,
-            ]
-        );
-        assert!(ids.contains(&readiness::CA_TRUST));
-        assert!(dashboard
-            .requirements
-            .iter()
-            .filter(|item| !matches!(
-                item.id,
-                readiness::CA_TRUST | readiness::ANDROID_APP_CA_TRUST
-            ))
-            .all(|item| item.ok));
-    }
-
-    #[test]
-    fn desktop_direct_dashboard_matches_auto_default_readiness() {
-        let (mut form, _) = load_form();
-        form.mode = "direct".into();
-        form.google_ip.clear();
-        form.front_domain.clear();
-        form.listen_host = "127.0.0.1".into();
-        form.listen_port = "8085".into();
-
-        let dashboard = mode_dashboard(&form);
-        let google = dashboard
-            .requirements
-            .iter()
-            .find(|item| item.id == readiness::DIRECT_GOOGLE_IP)
-            .expect("google ip readiness row");
-        let front = dashboard
-            .requirements
-            .iter()
-            .find(|item| item.id == readiness::DIRECT_FRONT_DOMAIN)
-            .expect("front domain readiness row");
-
-        assert!(google.ok);
-        assert!(front.ok);
-        assert!(google.detail.contains("Auto-detected"));
-        assert!(front.detail.contains("Defaults"));
-    }
-
-    #[test]
-    fn desktop_repair_actions_route_to_expected_tabs() {
-        let (mut form, _) = load_form();
-        form.mode = "apps_script".into();
-        form.account_groups.clear();
-        let dashboard = mode_dashboard(&form);
-        let repair = desktop_repair_action(&dashboard.requirements[0])
-            .expect("missing account group should have repair action");
-        assert_eq!(repair.target, "setup.account_groups");
-        assert_eq!(
-            repair.anchor,
-            Some("Advanced -> Multi-account pools -> Add group")
-        );
-        assert_eq!(repair.tab, UiTab::Advanced);
-
-        form.mode = "vercel_edge".into();
-        form.vercel_base_url.clear();
-        let dashboard = mode_dashboard(&form);
-        let repair = desktop_repair_action(
-            dashboard
-                .requirements
-                .iter()
-                .find(|item| item.id == readiness::VERCEL_BASE_URL)
-                .expect("serverless base row"),
-        )
-        .expect("missing serverless base should have repair action");
-        assert_eq!(repair.tab, UiTab::Setup);
-        assert_eq!(
-            repair.anchor,
-            Some("Setup -> Serverless JSON relay -> Base URL")
-        );
-
-        form.mode = "direct".into();
-        form.google_ip = "not-an-ip".into();
-        let dashboard = mode_dashboard(&form);
-        let repair = desktop_repair_action(
-            dashboard
-                .requirements
-                .iter()
-                .find(|item| item.id == readiness::DIRECT_GOOGLE_IP)
-                .expect("direct IP row"),
-        )
-        .expect("bad direct IP should have repair action");
-        assert_eq!(repair.tab, UiTab::Network);
-        assert_eq!(repair.anchor, Some("Network -> Google IP"));
-
-        form.listen_host = "0.0.0.0".into();
-        form.socks5_port = "8086".into();
-        form.lan_allowlist = None;
-        let dashboard = mode_dashboard(&form);
-        let repair = desktop_repair_action(
-            dashboard
-                .requirements
-                .iter()
-                .find(|item| item.id == readiness::LAN_ALLOWLIST)
-                .expect("lan allowlist row"),
-        )
-        .expect("lan allowlist warning should have repair action");
-        assert_eq!(repair.tab, UiTab::Network);
-        assert_eq!(
-            repair.anchor,
-            Some("Network -> Sharing and per-app routing -> Allowed IPs")
-        );
-
-        form.listen_host = "127.0.0.1".into();
-        form.mode = "apps_script".into();
-        let dashboard = mode_dashboard(&form);
-        let repair = desktop_repair_action(
-            dashboard
-                .requirements
-                .iter()
-                .find(|item| item.id == readiness::CA_TRUST)
-                .expect("ca trust row"),
-        )
-        .expect("ca trust warning should have repair action");
-        assert_eq!(repair.tab, UiTab::Trust);
-
-        form.mode = "full".into();
-        form.socks5_port.clear();
-        let dashboard = mode_dashboard(&form);
-        let repair = desktop_repair_action(
-            dashboard
-                .requirements
-                .iter()
-                .find(|item| item.id == readiness::FULL_TUNNEL_HEALTH)
-                .expect("full tunnel health row"),
-        )
-        .expect("full tunnel health warning should have repair action");
-        assert_eq!(repair.tab, UiTab::Help);
-        assert_eq!(
-            repair.anchor,
-            Some("Help & docs -> Full tunnel -> health/details and IP-check smoke test")
-        );
-        let udp = dashboard
-            .requirements
-            .iter()
-            .find(|item| item.id == readiness::FULL_UDP_SUPPORT)
-            .expect("full UDP row");
-        assert!(!udp.ok);
-    }
-}
-
-/// Accent — saturated blue used for primary actions, links, and focus rings.
-const ACCENT: egui::Color32 = egui::Color32::from_rgb(102, 178, 255);
-const ACCENT_WARM: egui::Color32 = egui::Color32::from_rgb(235, 182, 108);
-const ACCENT_MINT: egui::Color32 = egui::Color32::from_rgb(94, 206, 164);
-const OK_GREEN: egui::Color32 = egui::Color32::from_rgb(76, 196, 118);
-const ERR_RED: egui::Color32 = egui::Color32::from_rgb(242, 122, 122);
-const TEXT_MAIN: egui::Color32 = egui::Color32::from_rgb(237, 235, 230);
-/// Form labels — slightly brighter than body for scanability.
-const TEXT_LABEL: egui::Color32 = egui::Color32::from_rgb(222, 219, 212);
-const TEXT_MUTED: egui::Color32 = egui::Color32::from_rgb(172, 168, 160);
-const CARD_FILL: egui::Color32 = egui::Color32::from_rgb(34, 33, 31);
-const CARD_STROKE: egui::Color32 = egui::Color32::from_rgb(58, 56, 52);
-/// Subtle highlight mixed into section outlines (cool slate).
-const CARD_STROKE_HI: egui::Color32 = egui::Color32::from_rgb(72, 82, 96);
-const PANEL_FILL: egui::Color32 = egui::Color32::from_rgb(22, 21, 20);
-const SURFACE_SHADOW: egui::Shadow = egui::Shadow {
-    offset: egui::vec2(0.0, 6.0),
-    blur: 22.0,
-    spread: 0.0,
-    color: egui::Color32::from_black_alpha(72),
-};
-const HEADER_SHADOW: egui::Shadow = egui::Shadow {
-    offset: egui::vec2(0.0, 8.0),
-    blur: 28.0,
-    spread: 0.0,
-    color: egui::Color32::from_black_alpha(90),
-};
-const FORM_LABEL_WIDTH: f32 = 150.0;
-const FORM_GAP: f32 = 12.0;
-
-fn apply_ui_theme(ctx: &egui::Context) {
-    let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = egui::Color32::from_rgb(17, 16, 15);
-    visuals.window_fill = PANEL_FILL;
-    visuals.window_rounding = egui::Rounding::same(11.0);
-    visuals.window_shadow = egui::Shadow {
-        offset: egui::vec2(0.0, 14.0),
-        blur: 36.0,
-        spread: 0.0,
-        color: egui::Color32::from_black_alpha(110),
-    };
-    visuals.window_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(48, 54, 62));
-    visuals.popup_shadow = egui::Shadow {
-        offset: egui::vec2(0.0, 8.0),
-        blur: 18.0,
-        spread: 0.0,
-        color: egui::Color32::from_black_alpha(100),
-    };
-    visuals.extreme_bg_color = egui::Color32::from_rgb(14, 13, 12);
-    visuals.faint_bg_color = egui::Color32::from_rgb(38, 36, 33);
-    visuals.code_bg_color = egui::Color32::from_rgb(22, 21, 20);
-    visuals.hyperlink_color = ACCENT;
-    visuals.selection.bg_fill = ACCENT.linear_multiply(0.38);
-    visuals.selection.stroke = egui::Stroke::new(1.0, ACCENT.linear_multiply(0.85));
-
-    let wr = egui::Rounding::same(8.0);
-    visuals.widgets.noninteractive.bg_fill = CARD_FILL;
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, CARD_STROKE);
-    visuals.widgets.noninteractive.rounding = wr;
-    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(44, 41, 38);
-    visuals.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(50, 46, 42);
-    visuals.widgets.inactive.rounding = wr;
-    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(54, 50, 46);
-    visuals.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(58, 54, 49);
-    visuals.widgets.hovered.rounding = wr;
-    visuals.widgets.active.bg_fill = ACCENT.linear_multiply(0.58);
-    visuals.widgets.active.rounding = wr;
-    visuals.widgets.open.bg_fill = egui::Color32::from_rgb(48, 44, 40);
-    visuals.widgets.open.rounding = wr;
-
-    visuals.collapsing_header_frame = true;
-    visuals.button_frame = true;
-    visuals.indent_has_left_vline = true;
-    ctx.set_visuals(visuals);
-
-    ctx.style_mut(|s| {
-        s.text_styles
-            .insert(egui::TextStyle::Heading, egui::FontId::proportional(23.0));
-        s.text_styles
-            .insert(egui::TextStyle::Body, egui::FontId::proportional(14.9));
-        s.text_styles
-            .insert(egui::TextStyle::Button, egui::FontId::proportional(14.1));
-        s.text_styles
-            .insert(egui::TextStyle::Small, egui::FontId::proportional(12.9));
-        s.text_styles
-            .insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.0));
-        s.spacing.item_spacing = egui::vec2(10.0, 9.0);
-        s.spacing.button_padding = egui::vec2(15.0, 8.0);
-        s.spacing.interact_size = egui::vec2(40.0, 34.0);
-        s.spacing.combo_width = 268.0;
-        s.spacing.text_edit_width = 348.0;
-        s.spacing.tooltip_width = 440.0;
-        s.spacing.window_margin = egui::Margin::same(10.0);
-    });
-}
-
-/// Section title with a thin accent rail (readability + visual rhythm).
-fn section_title_bar(ui: &mut egui::Ui, title: &str) {
-    ui.add_space(14.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 11.0;
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(5.0, 20.0), egui::Sense::hover());
-        let shine = ACCENT.linear_multiply(1.08).gamma_multiply(1.05);
-        ui.painter()
-            .rect_filled(rect, egui::Rounding::same(3.0), shine);
-        ui.label(
-            egui::RichText::new(title)
-                .size(15.8)
-                .color(TEXT_MAIN)
-                .strong(),
-        );
-    });
-    ui.add_space(9.0);
-}
-
-/// Draw a "section card" — rounded frame grouping related controls.
-fn section(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui)) {
-    section_title_bar(ui, title);
-    let frame = egui::Frame::none()
-        .fill(CARD_FILL)
-        .stroke(egui::Stroke::new(
-            1.0,
-            egui::Color32::from_rgb(
-                (CARD_STROKE.r() + CARD_STROKE_HI.r()) / 2,
-                (CARD_STROKE.g() + CARD_STROKE_HI.g()) / 2,
-                (CARD_STROKE.b() + CARD_STROKE_HI.b()) / 2,
-            ),
-        ))
-        .rounding(11.0)
-        .shadow(SURFACE_SHADOW)
-        .inner_margin(egui::Margin::symmetric(21.0, 18.0));
-    frame.show(ui, body);
-}
-
-fn help_subheading(ui: &mut egui::Ui, text: &str) {
-    ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new(text)
-            .strong()
-            .color(ACCENT.linear_multiply(1.02))
-            .size(13.7),
-    );
-    ui.add_space(5.0);
-}
-
-fn help_muted(ui: &mut egui::Ui, text: &str) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(13.0)
-            .line_height(Some(18.0))
-            .color(TEXT_MUTED),
-    );
-}
-
-fn help_callout(ui: &mut egui::Ui, title: &str, body: &str, color: egui::Color32) {
-    egui::Frame::none()
-        .fill(color.linear_multiply(0.14))
-        .stroke(egui::Stroke::new(1.0, color.linear_multiply(0.5)))
-        .rounding(10.0)
-        .shadow(egui::Shadow {
-            offset: egui::vec2(0.0, 3.0),
-            blur: 12.0,
-            spread: 0.0,
-            color: egui::Color32::from_black_alpha(48),
-        })
-        .inner_margin(egui::Margin::symmetric(14.0, 11.0))
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new(title).strong().color(color).size(13.2));
-            ui.add_space(4.0);
-            help_muted(ui, body);
-        });
-}
-
-fn mode_goal_card(ui: &mut egui::Ui, title: &str, body: &str, color: egui::Color32) {
-    let width = ((ui.available_width() - 14.0) / 2.0).max(240.0);
-    egui::Frame::none()
-        .fill(egui::Color32::from_rgb(40, 37, 34))
-        .stroke(egui::Stroke::new(1.0, color.linear_multiply(0.48)))
-        .rounding(10.0)
-        .shadow(egui::Shadow {
-            offset: egui::vec2(0.0, 2.0),
-            blur: 10.0,
-            spread: 0.0,
-            color: egui::Color32::from_black_alpha(40),
-        })
-        .inner_margin(egui::Margin::symmetric(14.0, 12.0))
-        .show(ui, |ui| {
-            ui.set_min_width(width);
-            ui.label(egui::RichText::new(title).strong().color(color).size(13.6));
-            ui.add_space(4.0);
-            help_muted(ui, body);
-        });
 }
 
 fn clean_optional_text(value: &str) -> Option<String> {
@@ -1532,1096 +1125,6 @@ fn clean_optional_list(value: &str) -> Option<Vec<String>> {
     } else {
         Some(out)
     }
-}
-
-fn mode_summary(mode: &str) -> (&'static str, &'static str, &'static str, &'static str) {
-    match mode {
-        "full" => (
-            "Full tunnel",
-            "Apps Script tunnel channel plus your tunnel-node server.",
-            "Needs Apps Script full deployment, tunnel-node VPS, and server logs for verification.",
-            "No local MITM CA; verify by checking that browsing exits through the tunnel-node IP.",
-        ),
-        "vercel_edge" => (
-            "Serverless JSON",
-            "Native no-VPS JSON/base64 fetch relay hosted on Vercel or Netlify.",
-            "Deploy tools/vercel-json-relay or tools/netlify-json-relay, set AUTH_KEY, paste Base URL.",
-            "Needs local MITM CA for HTTPS clients, same as Apps Script mode.",
-        ),
-        "direct" | "google_only" => (
-            "Direct fronting",
-            "SNI-rewrite path only: Google edge plus configured fronting groups.",
-            "No Apps Script credentials; useful for bootstrap or limited CDN-fronted targets.",
-            "Not a full tunnel; unmatched traffic goes raw/direct.",
-        ),
-        _ => (
-            "Apps Script",
-            "Classic no-VPS relay through your own Google Apps Script deployments.",
-            "Deploy Code.gs or CodeCloudflareWorker.gs, then add account groups with AUTH_KEY and IDs.",
-            "Needs local MITM CA for HTTPS clients; quotas scale with deployment/account pools.",
-        ),
-    }
-}
-
-fn mode_summary_panel(ui: &mut egui::Ui, mode: &str) {
-    let (title, path, setup, trust) = mode_summary(mode);
-    ui.add_space(6.0);
-    ui.separator();
-    egui::Grid::new("mode_summary_grid")
-        .num_columns(2)
-        .spacing([12.0, 6.0])
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new("Selected").color(ACCENT).strong());
-            ui.label(egui::RichText::new(title).strong());
-            ui.end_row();
-            ui.label(egui::RichText::new("Path").color(egui::Color32::from_gray(170)));
-            help_muted(ui, path);
-            ui.end_row();
-            ui.label(egui::RichText::new("Setup").color(egui::Color32::from_gray(170)));
-            help_muted(ui, setup);
-            ui.end_row();
-            ui.label(egui::RichText::new("Trust").color(egui::Color32::from_gray(170)));
-            help_muted(ui, trust);
-            ui.end_row();
-        });
-}
-
-struct ModeReadinessItem {
-    id: readiness::ReadinessId,
-    label: String,
-    ok: bool,
-    detail: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct DesktopRepairAction {
-    label: &'static str,
-    target: &'static str,
-    anchor: Option<&'static str>,
-    tab: UiTab,
-    hint: &'static str,
-}
-
-struct ModeDashboard {
-    title: &'static str,
-    subtitle: &'static str,
-    color: egui::Color32,
-    chips: Vec<String>,
-    capabilities: Vec<&'static str>,
-    requirements: Vec<ModeReadinessItem>,
-    cautions: Vec<&'static str>,
-}
-
-fn mode_dashboard(form: &FormState) -> ModeDashboard {
-    let enabled_groups: Vec<&AccountGroupForm> =
-        form.account_groups.iter().filter(|g| g.enabled).collect();
-    let deployment_count: usize = enabled_groups
-        .iter()
-        .flat_map(|g| g.script_ids.lines().flat_map(|line| line.split(',')))
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .count();
-    let groups_with_auth = enabled_groups
-        .iter()
-        .filter(|g| !g.auth_key.trim().is_empty())
-        .count();
-    let listen_ready =
-        form.listen_port.trim().parse::<u16>().is_ok() && !form.listen_host.trim().is_empty();
-    let relay_path_ready = form.vercel_relay_path.trim().starts_with('/');
-    let serverless_base_ready = form.vercel_base_url.trim().starts_with("http://")
-        || form.vercel_base_url.trim().starts_with("https://");
-    let mut dashboard = match form.mode.as_str() {
-        "vercel_edge" => ModeDashboard {
-            title: "Serverless JSON",
-            subtitle: "No-VPS JSON/base64 fetch relay on Vercel or Netlify.",
-            color: ACCENT_MINT,
-            chips: vec![
-                "needs local CA".into(),
-                "no Google quota pool".into(),
-                format!("max body {} MiB", form.vercel_max_body_mb.max(1)),
-            ],
-            capabilities: vec![
-                "HTTPS browsing through the local MITM proxy",
-                "Vercel/Netlify deployment with a single AUTH_KEY",
-                "Optional JSON batch envelope when the helper supports it",
-                "Same local HTTP/SOCKS listener model as Apps Script",
-            ],
-            requirements: vec![
-                ModeReadinessItem {
-                    id: readiness::VERCEL_BASE_URL,
-                    label: "Relay origin".into(),
-                    ok: serverless_base_ready,
-                    detail: if serverless_base_ready {
-                        form.vercel_base_url.trim().to_string()
-                    } else {
-                        "Paste https://your-project.vercel.app or Netlify site URL".into()
-                    },
-                },
-                ModeReadinessItem {
-                    id: readiness::VERCEL_RELAY_PATH,
-                    label: "Relay path".into(),
-                    ok: relay_path_ready,
-                    detail: if relay_path_ready {
-                        form.vercel_relay_path.trim().to_string()
-                    } else {
-                        "Path must start with /, usually /api/api".into()
-                    },
-                },
-                ModeReadinessItem {
-                    id: readiness::VERCEL_AUTH_KEY,
-                    label: "AUTH_KEY".into(),
-                    ok: !form.vercel_auth_key.trim().is_empty(),
-                    detail: if form.vercel_auth_key.trim().is_empty() {
-                        "Must match the serverless deployment environment variable".into()
-                    } else {
-                        "Configured".into()
-                    },
-                },
-                ModeReadinessItem {
-                    id: readiness::LOCAL_LISTENER,
-                    label: "Local listener".into(),
-                    ok: listen_ready,
-                    detail: format!("{}:{}", form.listen_host.trim(), form.listen_port.trim()),
-                },
-            ],
-            cautions: vec![
-                "Platform protection pages must not sit in front of the relay endpoint.",
-                "This mode still needs local CA trust for HTTPS clients.",
-            ],
-        },
-        "direct" | "google_only" => ModeDashboard {
-            title: "Direct fronting",
-            subtitle: "No-relay SNI rewrite for Google edge and configured fronting groups.",
-            color: ACCENT_WARM,
-            chips: vec![
-                "no relay credentials".into(),
-                "bootstrap friendly".into(),
-                "limited coverage".into(),
-            ],
-            capabilities: vec![
-                "Reach script.google.com to deploy or repair Apps Script",
-                "Use tested Google/fronting group edge targets without relay quota",
-                "Bypass relay auth/key setup for narrow bootstrap workflows",
-                "Keep HTTP/SOCKS listeners available for proxy-aware clients",
-            ],
-            requirements: vec![
-                ModeReadinessItem {
-                    id: readiness::DIRECT_GOOGLE_IP,
-                    label: "Google edge IP".into(),
-                    ok: form.google_ip.trim().is_empty()
-                        || form.google_ip.trim().parse::<std::net::IpAddr>().is_ok(),
-                    detail: if form.google_ip.trim().is_empty() {
-                        "Auto-detected on start when possible".into()
-                    } else {
-                        form.google_ip.trim().to_string()
-                    },
-                },
-                ModeReadinessItem {
-                    id: readiness::DIRECT_FRONT_DOMAIN,
-                    label: "Front SNI".into(),
-                    ok: form.front_domain.trim().is_empty()
-                        || form.front_domain.trim().parse::<std::net::IpAddr>().is_err(),
-                    detail: if form.front_domain.trim().is_empty() {
-                        "Defaults to www.google.com on start".into()
-                    } else if form.front_domain.trim().parse::<std::net::IpAddr>().is_ok() {
-                        "Use a hostname for SNI, not an IP address".into()
-                    } else {
-                        form.front_domain.trim().to_string()
-                    },
-                },
-                ModeReadinessItem {
-                    id: readiness::LOCAL_LISTENER,
-                    label: "Local listener".into(),
-                    ok: listen_ready,
-                    detail: format!("{}:{}", form.listen_host.trim(), form.listen_port.trim()),
-                },
-            ],
-            cautions: vec![
-                "This is not a full tunnel; unmatched traffic is not carried by a relay.",
-                "Use Apps Script, Serverless JSON, or Full when you need broad browsing coverage.",
-            ],
-        },
-        "full" => ModeDashboard {
-            title: "Full tunnel",
-            subtitle: "Apps Script control channel plus your remote tunnel-node server.",
-            color: egui::Color32::from_rgb(170, 145, 225),
-            chips: vec![
-                "no local CA".into(),
-                "needs tunnel-node".into(),
-                format!("{deployment_count} deployment ID(s)"),
-            ],
-            capabilities: vec![
-                "Carry TCP/UDP-style tunnel batches without local HTTPS interception",
-                "Use tunnel-node health/logs as the main remote verification surface",
-                "Tune full batch timeout, timeout strikes, cooldown, and QUIC blocking",
-                "Keep Apps Script account groups for the full-mode control channel",
-            ],
-            requirements: vec![
-                ModeReadinessItem {
-                    id: readiness::ACCOUNT_GROUPS_ENABLED,
-                    label: "Enabled groups".into(),
-                    ok: !enabled_groups.is_empty(),
-                    detail: format!("{} enabled group(s)", enabled_groups.len()),
-                },
-                ModeReadinessItem {
-                    id: readiness::ACCOUNT_GROUPS_SCRIPT_IDS,
-                    label: "Deployment IDs".into(),
-                    ok: deployment_count > 0,
-                    detail: format!("{deployment_count} deployment ID(s)"),
-                },
-                ModeReadinessItem {
-                    id: readiness::ACCOUNT_GROUPS_AUTH_KEY,
-                    label: "Group AUTH_KEY".into(),
-                    ok: groups_with_auth == enabled_groups.len() && !enabled_groups.is_empty(),
-                    detail: format!("{groups_with_auth}/{} enabled group(s)", enabled_groups.len()),
-                },
-                ModeReadinessItem {
-                    id: readiness::LOCAL_LISTENER,
-                    label: "Local listener".into(),
-                    ok: listen_ready,
-                    detail: format!("{}:{}", form.listen_host.trim(), form.listen_port.trim()),
-                },
-            ],
-            cautions: vec![
-                "Verify remote tunnel-node auth, version, and limits outside the local CA flow.",
-                "Full mode can be healthy even when local CA checks are irrelevant.",
-            ],
-        },
-        _ => ModeDashboard {
-            title: "Apps Script",
-            subtitle: "Classic no-VPS relay through your own Google Apps Script deployments.",
-            color: ACCENT,
-            chips: vec![
-                "needs local CA".into(),
-                format!("{} enabled group(s)", enabled_groups.len()),
-                format!("{deployment_count} deployment ID(s)"),
-            ],
-            capabilities: vec![
-                "Full local HTTPS browsing through the Apps Script relay",
-                "Multiple deployment IDs per Google account for fallback",
-                "Multiple account groups with weights for quota resilience",
-                "Optional Cloudflare Worker exit via the Apps Script helper",
-            ],
-            requirements: vec![
-                ModeReadinessItem {
-                    id: readiness::ACCOUNT_GROUPS_ENABLED,
-                    label: "Enabled groups".into(),
-                    ok: !enabled_groups.is_empty(),
-                    detail: format!("{} enabled group(s)", enabled_groups.len()),
-                },
-                ModeReadinessItem {
-                    id: readiness::ACCOUNT_GROUPS_SCRIPT_IDS,
-                    label: "Deployment IDs".into(),
-                    ok: deployment_count > 0,
-                    detail: format!("{deployment_count} deployment ID(s)"),
-                },
-                ModeReadinessItem {
-                    id: readiness::ACCOUNT_GROUPS_AUTH_KEY,
-                    label: "Group AUTH_KEY".into(),
-                    ok: groups_with_auth == enabled_groups.len() && !enabled_groups.is_empty(),
-                    detail: format!("{groups_with_auth}/{} enabled group(s)", enabled_groups.len()),
-                },
-                ModeReadinessItem {
-                    id: readiness::LOCAL_LISTENER,
-                    label: "Local listener".into(),
-                    ok: listen_ready,
-                    detail: format!("{}:{}", form.listen_host.trim(), form.listen_port.trim()),
-                },
-            ],
-            cautions: vec![
-                "Install and trust the local CA before using HTTPS clients.",
-                "Quota pressure is solved first by more deployments/accounts, then by careful tuning.",
-            ],
-        },
-    };
-    append_operational_readiness(form, &mut dashboard.requirements);
-    dashboard
-}
-
-fn append_operational_readiness(form: &FormState, requirements: &mut Vec<ModeReadinessItem>) {
-    if matches!(form.mode.as_str(), "full") {
-        requirements.push(ModeReadinessItem {
-            id: readiness::FULL_CODEFULL_DEPLOYMENT,
-            label: "CodeFull deployment".into(),
-            ok: false,
-            detail: "Verify every full-mode deployment uses CodeFull.gs".into(),
-        });
-        requirements.push(ModeReadinessItem {
-            id: readiness::FULL_TUNNEL_NODE_URL,
-            label: "Tunnel-node URL".into(),
-            ok: false,
-            detail: "CodeFull.gs must point at the public tunnel-node origin".into(),
-        });
-        requirements.push(ModeReadinessItem {
-            id: readiness::FULL_TUNNEL_AUTH,
-            label: "Tunnel auth".into(),
-            ok: false,
-            detail: "TUNNEL_AUTH_KEY must match between CodeFull.gs and tunnel-node".into(),
-        });
-        requirements.push(ModeReadinessItem {
-            id: readiness::FULL_UDP_SUPPORT,
-            label: "UDP/SOCKS5 path".into(),
-            ok: !form.socks5_port.trim().is_empty(),
-            detail: if form.socks5_port.trim().is_empty() {
-                "Set SOCKS5 port if clients need UDP ASSOCIATE".into()
-            } else {
-                format!("SOCKS5 listener configured on {}", form.socks5_port.trim())
-            },
-        });
-        requirements.push(ModeReadinessItem {
-            id: readiness::FULL_TUNNEL_HEALTH,
-            label: "Tunnel health".into(),
-            ok: false,
-            detail: "Check /healthz, tunnel-node logs, and public-IP verification".into(),
-        });
-    }
-
-    if !matches!(form.mode.as_str(), "full") {
-        requirements.push(ModeReadinessItem {
-            id: readiness::CA_TRUST,
-            label: "Local CA trust".into(),
-            ok: false,
-            detail: "Install and trust the generated CA before routing HTTPS clients".into(),
-        });
-        requirements.push(ModeReadinessItem {
-            id: readiness::ANDROID_APP_CA_TRUST,
-            label: "Android app CA trust".into(),
-            ok: false,
-            detail: "Android apps may ignore user CAs unless they opt in".into(),
-        });
-    }
-
-    let host = form.listen_host.trim();
-    if matches!(host, "0.0.0.0" | "::") {
-        let has_token = form
-            .lan_token
-            .as_deref()
-            .map(|token| !token.trim().is_empty())
-            .unwrap_or(false);
-        let allowlist_count = form
-            .lan_allowlist
-            .as_ref()
-            .map(|allowlist| {
-                allowlist
-                    .iter()
-                    .filter(|entry| !entry.trim().is_empty())
-                    .count()
-            })
-            .unwrap_or(0);
-        let has_allowlist = allowlist_count > 0;
-
-        requirements.push(ModeReadinessItem {
-            id: readiness::LAN_EXPOSURE,
-            label: "LAN exposure".into(),
-            ok: false,
-            detail: format!("Proxy is reachable on {host} when firewall rules allow"),
-        });
-        requirements.push(ModeReadinessItem {
-            id: readiness::LAN_TOKEN,
-            label: "LAN access control".into(),
-            ok: has_token || has_allowlist,
-            detail: if has_token {
-                "HTTP/CONNECT token configured".into()
-            } else if has_allowlist {
-                format!("{allowlist_count} allowlist entrie(s) configured")
-            } else {
-                "Set lan_token or lan_allowlist before sharing on LAN".into()
-            },
-        });
-        if !form.socks5_port.trim().is_empty() {
-            requirements.push(ModeReadinessItem {
-                id: readiness::LAN_ALLOWLIST,
-                label: "SOCKS5 LAN allowlist".into(),
-                ok: has_allowlist,
-                detail: if has_allowlist {
-                    format!("{allowlist_count} allowlist entrie(s) configured")
-                } else {
-                    "SOCKS5 has no token header; add lan_allowlist".into()
-                },
-            });
-        }
-    }
-}
-
-fn repair_tab_for_target(target: &str) -> UiTab {
-    if target.starts_with("advanced.") || target.starts_with("setup.account_groups") {
-        UiTab::Advanced
-    } else if target.starts_with("setup.direct")
-        || target.starts_with("setup.local_listener")
-        || target.starts_with("network.")
-    {
-        UiTab::Network
-    } else if target.starts_with("help.") {
-        UiTab::Help
-    } else if target.starts_with("setup.ca_trust") {
-        UiTab::Trust
-    } else {
-        UiTab::Setup
-    }
-}
-
-fn repair_hint_for_tab(tab: UiTab) -> &'static str {
-    match tab {
-        UiTab::Setup => "Jump to the setup fields for this blocker.",
-        UiTab::Network => "Jump to network/listener fields for this blocker.",
-        UiTab::Advanced => "Jump to advanced configuration fields for this blocker.",
-        UiTab::Monitor => "Jump to monitor diagnostics for this blocker.",
-        UiTab::Trust => "Jump to certificate, signing, and support-bundle trust state.",
-        UiTab::Help => "Jump to help and documentation for this blocker.",
-    }
-}
-
-fn desktop_repair_action(item: &ModeReadinessItem) -> Option<DesktopRepairAction> {
-    if item.ok {
-        return None;
-    }
-    let repair = readiness::repair_for_id(item.id)?;
-    let tab = repair_tab_for_target(repair.target);
-    let anchor = readiness::repair_anchor_for_target(repair.target).map(|anchor| anchor.desktop);
-    Some(DesktopRepairAction {
-        label: repair.label,
-        target: repair.target,
-        anchor,
-        tab,
-        hint: repair_hint_for_tab(tab),
-    })
-}
-
-fn mode_dashboard_panel(
-    ui: &mut egui::Ui,
-    form: &FormState,
-    running: bool,
-    dirty: bool,
-    active_tab: &mut UiTab,
-) {
-    let dashboard = mode_dashboard(form);
-    egui::Frame::none()
-        .fill(dashboard.color.linear_multiply(0.1))
-        .stroke(egui::Stroke::new(
-            1.0,
-            dashboard.color.linear_multiply(0.46),
-        ))
-        .rounding(11.0)
-        .inner_margin(egui::Margin::symmetric(15.0, 13.0))
-        .show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    egui::RichText::new(dashboard.title)
-                        .strong()
-                        .size(16.0)
-                        .color(dashboard.color.linear_multiply(1.16)),
-                );
-                info_chip(
-                    ui,
-                    if running { "running" } else { "stopped" },
-                    if running { OK_GREEN } else { ERR_RED },
-                );
-                if dirty {
-                    info_chip(ui, "unsaved edits", ACCENT_WARM);
-                }
-                for chip in &dashboard.chips {
-                    info_chip(ui, chip, dashboard.color);
-                }
-            });
-            ui.add_space(5.0);
-            help_muted(ui, dashboard.subtitle);
-
-            ui.add_space(10.0);
-            ui.columns(2, |columns| {
-                columns[0].label(
-                    egui::RichText::new("Readiness")
-                        .strong()
-                        .color(TEXT_LABEL)
-                        .size(13.5),
-                );
-                columns[0].add_space(5.0);
-                for item in &dashboard.requirements {
-                    let warning = readiness::repair_for_id(item.id)
-                        .map(|repair| {
-                            repair.target.starts_with("network.")
-                                || repair.target.starts_with("help.")
-                                || repair.target.starts_with("setup.ca_trust")
-                        })
-                        .unwrap_or(false);
-                    let status = if item.ok {
-                        "ready"
-                    } else if warning {
-                        "check"
-                    } else {
-                        "missing"
-                    };
-                    let status_color = if item.ok {
-                        OK_GREEN
-                    } else if warning {
-                        ACCENT_WARM
-                    } else {
-                        ERR_RED
-                    };
-                    columns[0].horizontal_wrapped(|ui| {
-                        ui.label(
-                            egui::RichText::new(status)
-                                .strong()
-                                .size(11.2)
-                                .color(status_color),
-                        );
-                        ui.label(egui::RichText::new(&item.label).strong().color(TEXT_MAIN));
-                        ui.small(egui::RichText::new(&item.detail).color(TEXT_MUTED));
-                        if !item.ok {
-                            ui.small(
-                                egui::RichText::new(item.id)
-                                    .monospace()
-                                    .color(status_color.linear_multiply(1.08)),
-                            );
-                            if let Some(repair) = desktop_repair_action(item) {
-                                if ui
-                                    .small_button("repair")
-                                    .on_hover_text(match repair.anchor {
-                                        Some(anchor) => format!(
-                                            "{}\nOpen: {}\nTarget: {}",
-                                            repair.hint, anchor, repair.target
-                                        ),
-                                        None => format!("{} ({})", repair.hint, repair.target),
-                                    })
-                                    .clicked()
-                                {
-                                    *active_tab = repair.tab;
-                                }
-                            }
-                        }
-                    });
-                }
-
-                columns[1].label(
-                    egui::RichText::new("Capabilities")
-                        .strong()
-                        .color(TEXT_LABEL)
-                        .size(13.5),
-                );
-                columns[1].add_space(5.0);
-                for capability in &dashboard.capabilities {
-                    columns[1].small(egui::RichText::new(*capability).color(TEXT_MUTED));
-                }
-                if !dashboard.cautions.is_empty() {
-                    columns[1].add_space(7.0);
-                    for caution in &dashboard.cautions {
-                        columns[1].small(
-                            egui::RichText::new(*caution).color(ACCENT_WARM.linear_multiply(1.08)),
-                        );
-                    }
-                }
-            });
-        });
-}
-
-fn tool_help_row(
-    ui: &mut egui::Ui,
-    name: &str,
-    role: &str,
-    next_step: &str,
-    local_path: Option<&str>,
-) {
-    ui.horizontal_wrapped(|ui| {
-        ui.label(
-            egui::RichText::new(name)
-                .strong()
-                .color(egui::Color32::from_gray(220)),
-        );
-        ui.label(egui::RichText::new("->").color(egui::Color32::from_gray(110)));
-        help_muted(ui, role);
-        if let Some(path) = local_path {
-            if ui
-                .small_button("open")
-                .on_hover_text(format!("Open {} in the file manager.", path))
-                .clicked()
-            {
-                open_local_resource(path);
-            }
-        }
-    });
-    ui.add_space(1.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.add_space(14.0);
-        ui.small(egui::RichText::new(next_step).color(egui::Color32::from_gray(145)));
-    });
-}
-
-fn xhttp_platform_defaults(
-    platform: &str,
-) -> (
-    &'static str,
-    &'static str,
-    &'static str,
-    &'static [&'static str],
-) {
-    match platform {
-        "vercel" => (
-            "your-project.vercel.app",
-            "/yourpath",
-            "vercel-xhttp",
-            VERCEL_XHTTP_CANDIDATES,
-        ),
-        _ => (
-            "your-site.netlify.app",
-            "/p4r34m",
-            "netlify-xhttp",
-            NETLIFY_XHTTP_CANDIDATES,
-        ),
-    }
-}
-
-fn normalize_xhttp_host(value: &str) -> String {
-    let trimmed = value.trim();
-    let without_scheme = trimmed
-        .strip_prefix("https://")
-        .or_else(|| trimmed.strip_prefix("http://"))
-        .unwrap_or(trimmed);
-    without_scheme
-        .split('/')
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_string()
-}
-
-fn normalize_xhttp_path(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        "/p4r34m".into()
-    } else if trimmed.starts_with('/') {
-        trimmed.to_string()
-    } else {
-        format!("/{trimmed}")
-    }
-}
-
-fn encode_uri_component(input: &str) -> String {
-    let mut out = String::new();
-    for b in input.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char)
-            }
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
-fn generate_xhttp_vless_links(form: &XhttpGeneratorForm) -> Result<String, String> {
-    let uuid = form.uuid.trim();
-    if uuid.is_empty() {
-        return Err("Paste the UUID from your real Xray/V2Ray backend first.".into());
-    }
-    let relay_host = normalize_xhttp_host(&form.relay_host);
-    if relay_host.is_empty() {
-        return Err("Paste your deployed Vercel/Netlify relay hostname first.".into());
-    }
-    let path = normalize_xhttp_path(&form.path);
-    let encoded_path = encode_uri_component(&path);
-    let allow = if form.allow_insecure { "1" } else { "0" };
-    let prefix = form.name_prefix.trim();
-    let prefix = if prefix.is_empty() { "xhttp" } else { prefix };
-    let mut links = Vec::new();
-    for raw in form.candidates.lines().flat_map(|line| line.split(',')) {
-        let candidate = normalize_xhttp_host(raw);
-        if candidate.is_empty()
-            || links
-                .iter()
-                .any(|link: &String| link.contains(&format!("@{candidate}:443?")))
-        {
-            continue;
-        }
-        let tag = encode_uri_component(&format!("{prefix}-{candidate}"));
-        links.push(format!(
-            "vless://{uuid}@{candidate}:443?mode=auto&path={encoded_path}&security=tls&encryption=none&insecure={allow}&host={relay_host}&type=xhttp&allowInsecure={allow}&sni={candidate}&alpn=h2%2Chttp%2F1.1&fp=chrome#{tag}"
-        ));
-    }
-    if links.is_empty() {
-        Err("Add at least one Address/SNI candidate.".into())
-    } else {
-        Ok(links.join("\n"))
-    }
-}
-
-fn generate_xhttp_deploy_notes(form: &XhttpGeneratorForm) -> Result<String, String> {
-    let target = form.target_domain.trim();
-    if target.is_empty() {
-        return Err("Paste TARGET_DOMAIN first, for example https://xray.example.com:2096.".into());
-    }
-    if !(target.starts_with("https://") || target.starts_with("http://")) {
-        return Err("TARGET_DOMAIN must include http:// or https:// and any required port.".into());
-    }
-    let notes = if form.platform == "vercel" {
-        format!(
-            "Vercel XHTTP helper\n\nManual / CLI:\n1. Open tools/vercel-xhttp-relay.\n2. Deploy with: vercel --prod\n3. In Vercel project settings, add environment variable:\n   TARGET_DOMAIN={target}\n4. Redeploy after setting the variable.\n5. Disable Deployment Protection for this relay project if Vercel put a login/protection page in front.\n6. Put the produced *.vercel.app hostname into the generator Relay Host field.\n7. Generate VLESS links with the Vercel preset and test one candidate at a time.\n\nOptional: Setup tab -> XHTTP -> Deploy assistant -> Vercel API deploys the same Edge relay from this app (token stays in RAM until exit).\n\nSee docs/vercel-xhttp-relay.md for dashboard import."
-        )
-    } else {
-        format!(
-            "Netlify XHTTP helper\n\nManual / CLI:\n1. Open tools/netlify-xhttp-relay.\n2. Deploy with: netlify deploy --prod\n3. In Netlify site settings, add environment variable:\n   TARGET_DOMAIN={target}\n4. Redeploy after setting the variable.\n5. Confirm Edge Function logs show relay activity for /p4r34m.\n6. Put the produced *.netlify.app hostname into the generator Relay Host field.\n7. Generate VLESS links with the Netlify preset and test one candidate at a time.\n\nOptional: Deploy assistant → Netlify API uploads a ZIP with the backend URL baked into the edge script (no dashboard env step).\n\nDashboard flow: import tools/netlify-xhttp-relay in Netlify, publish directory public."
-        )
-    };
-    Ok(notes)
-}
-
-fn xhttp_vless_generator(
-    ui: &mut egui::Ui,
-    form: &mut XhttpGeneratorForm,
-    deploy_pipe: &mut XhttpDeployPipe,
-) -> Option<String> {
-    let mut toast = None;
-    help_muted(
-        ui,
-        "Generate external Xray/V2Ray VLESS + XHTTP links in-app. Native mhrv-f modes are unchanged. Provider API tokens for cloud deploy are kept in RAM only (never saved to config.json).",
-    );
-    ui.horizontal_wrapped(|ui| {
-        ui.label(egui::RichText::new("Preset").color(egui::Color32::from_gray(200)));
-        egui::ComboBox::from_id_source("xhttp_generator_platform")
-            .selected_text(if form.platform == "vercel" {
-                "Vercel XHTTP"
-            } else {
-                "Netlify XHTTP"
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut form.platform, "netlify".into(), "Netlify XHTTP");
-                ui.selectable_value(&mut form.platform, "vercel".into(), "Vercel XHTTP");
-            });
-        if ui
-            .small_button("load preset")
-            .on_hover_text(
-                "Reset path, name prefix, and Address/SNI candidates for the selected platform.",
-            )
-            .clicked()
-        {
-            let (_, path, prefix, candidates) = xhttp_platform_defaults(&form.platform);
-            form.path = path.into();
-            form.name_prefix = prefix.into();
-            form.candidates = candidates.join("\n");
-            form.output.clear();
-            toast = Some("XHTTP preset loaded.".into());
-        }
-    });
-    let (host_hint, _, _, _) = xhttp_platform_defaults(&form.platform);
-    form_row(
-        ui,
-        "UUID",
-        Some("The UUID configured on your real backend Xray/V2Ray VLESS inbound."),
-        |ui| {
-            ui.add(egui::TextEdit::singleline(&mut form.uuid).desired_width(f32::INFINITY));
-        },
-    );
-    form_row(
-        ui,
-        "Relay Host",
-        Some("Your deployed Vercel or Netlify hostname. This becomes the XHTTP Host value."),
-        |ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut form.relay_host)
-                    .hint_text(host_hint)
-                    .desired_width(f32::INFINITY),
-            );
-        },
-    );
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [120.0, 20.0],
-            egui::Label::new(egui::RichText::new("XHTTP").color(egui::Color32::from_gray(200))),
-        );
-        ui.label(egui::RichText::new("Path").small());
-        ui.add(egui::TextEdit::singleline(&mut form.path).desired_width(150.0));
-        ui.add_space(8.0);
-        ui.label(egui::RichText::new("Name").small());
-        ui.add(egui::TextEdit::singleline(&mut form.name_prefix).desired_width(150.0));
-    });
-    ui.horizontal(|ui| {
-        ui.add_space(120.0 + 8.0);
-        ui.checkbox(
-            &mut form.allow_insecure,
-            "allowInsecure=1 for mismatched Address/SNI/Host testing",
-        )
-        .on_hover_text("Use false when Address, SNI, and Host all match your own relay domain. Use true only when deliberately testing front candidates.");
-    });
-    form_row(
-        ui,
-        "Candidates",
-        Some("One Address/SNI candidate per line. Host remains the deployed relay hostname."),
-        |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut form.candidates)
-                    .font(egui::TextStyle::Monospace)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(6),
-            );
-        },
-    );
-    ui.horizontal_wrapped(|ui| {
-        ui.add_space(120.0 + 8.0);
-        if ui.button("Generate VLESS links").clicked() {
-            match generate_xhttp_vless_links(form) {
-                Ok(output) => {
-                    form.output = output;
-                    toast = Some("Generated XHTTP VLESS links.".into());
-                }
-                Err(e) => toast = Some(e),
-            }
-        }
-        if ui
-            .small_button("copy")
-            .on_hover_text("Copy the generated links.")
-            .clicked()
-        {
-            match generate_xhttp_vless_links(form) {
-                Ok(output) => {
-                    ui.ctx().copy_text(output.clone());
-                    form.output = output;
-                    toast = Some("Copied generated XHTTP links.".into());
-                }
-                Err(e) => toast = Some(e),
-            }
-        }
-    });
-    if !form.output.is_empty() {
-        form_row(
-            ui,
-            "Output",
-            Some("Paste one generated link into v2rayN/v2rayNG or another Xray-compatible client."),
-            |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut form.output)
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(5),
-                );
-            },
-        );
-    }
-    ui.separator();
-    help_subheading(ui, "Deploy assistant");
-    form_row(ui, "TARGET_DOMAIN", Some("Backend origin for the relay (scheme + host + port). Required for manual steps and API deploy."), |ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut form.target_domain)
-                .hint_text("https://xray.example.com:2096")
-                .desired_width(f32::INFINITY),
-        );
-    });
-    ui.horizontal(|ui| {
-        ui.add_space(120.0 + 8.0);
-        egui::Frame::none()
-            .fill(ACCENT.linear_multiply(0.065))
-            .stroke(egui::Stroke::new(1.0, ACCENT.linear_multiply(0.28)))
-            .rounding(10.0)
-            .inner_margin(egui::Margin::symmetric(11.0, 9.0))
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 10.0;
-                    ui.label(egui::RichText::new("Deploy via").small().color(TEXT_MUTED));
-                    for (tab_id, label) in [
-                        ("manual", "Manual / CLI"),
-                        ("vercel_api", "Vercel API"),
-                        ("netlify_api", "Netlify API"),
-                    ] {
-                        let sel = form.deploy_tab == tab_id;
-                        let mut rt = egui::RichText::new(label).size(13.0);
-                        rt = if sel {
-                            rt.strong().color(egui::Color32::WHITE)
-                        } else {
-                            rt.color(TEXT_LABEL)
-                        };
-                        if ui.add(egui::SelectableLabel::new(sel, rt)).clicked() {
-                            form.deploy_tab = tab_id.into();
-                        }
-                    }
-                });
-            });
-    });
-
-    if form.deploy_tab == "manual" {
-        help_muted(ui, "CLI or dashboard only — no token stored.");
-        ui.horizontal_wrapped(|ui| {
-            ui.add_space(120.0 + 8.0);
-            if ui.button("Generate deploy steps").clicked() {
-                match generate_xhttp_deploy_notes(form) {
-                    Ok(notes) => {
-                        form.deploy_notes = notes;
-                        toast = Some("Generated XHTTP deployment steps.".into());
-                    }
-                    Err(e) => toast = Some(e),
-                }
-            }
-            if ui.small_button("copy steps").clicked() {
-                match generate_xhttp_deploy_notes(form) {
-                    Ok(notes) => {
-                        ui.ctx().copy_text(notes.clone());
-                        form.deploy_notes = notes;
-                        toast = Some("Copied deployment steps.".into());
-                    }
-                    Err(e) => toast = Some(e),
-                }
-            }
-        });
-        if !form.deploy_notes.is_empty() {
-            form_row(
-                ui,
-                "Steps",
-                Some("Manual checklist for tools/vercel-xhttp-relay or tools/netlify-xhttp-relay."),
-                |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(&mut form.deploy_notes)
-                            .font(egui::TextStyle::Monospace)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(7),
-                    );
-                },
-            );
-        }
-    } else {
-        let plat_name = if form.deploy_tab == "vercel_api" {
-            "Vercel"
-        } else {
-            "Netlify"
-        };
-        let api_hint = format!(
-            "{plat_name} token is sent only to {plat_name}'s API from this process and is never saved to config.json. Keep the token short-lived, then clear it after deployment."
-        );
-        help_muted(ui, &api_hint);
-        form_row(
-            ui,
-            "API token",
-            Some("Paste a token with deploy scope. Never committed to disk by this app."),
-            |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut form.deploy_api_token)
-                        .password(!form.show_deploy_api_token)
-                        .desired_width(f32::INFINITY),
-                );
-            },
-        );
-        ui.horizontal(|ui| {
-            ui.add_space(120.0 + 8.0);
-            ui.checkbox(&mut form.show_deploy_api_token, "Show token");
-            ui.checkbox(&mut form.randomize_bundle_names, "Randomize project internals")
-                .on_hover_text("Optional hygiene: randomizes generated project/route/env names where the platform allows it. It does not change relay behavior.");
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.add_space(120.0 + 8.0);
-            let can_go = !deploy_pipe.busy && deploy_pipe.rx.is_none();
-            let label = if deploy_pipe.busy {
-                "Deploying…"
-            } else {
-                "Deploy to cloud"
-            };
-            let base = egui::Button::new(
-                egui::RichText::new(label)
-                    .strong()
-                    .color(egui::Color32::WHITE),
-            )
-            .rounding(8.0)
-            .min_size(egui::vec2(172.0, 34.0));
-            let btn = if deploy_pipe.busy {
-                base.fill(egui::Color32::from_rgb(72, 68, 62))
-                    .stroke(egui::Stroke::new(1.0, CARD_STROKE))
-            } else if can_go {
-                base.fill(ACCENT.linear_multiply(0.82))
-                    .stroke(egui::Stroke::new(1.0, ACCENT.linear_multiply(1.05)))
-            } else {
-                base
-            };
-            if ui.add_enabled(can_go && !deploy_pipe.busy, btn).clicked() {
-                if let Err(e) = generate_xhttp_deploy_notes(form).map(|_| ()) {
-                    toast = Some(e);
-                } else {
-                    let (tx, rx) = std::sync::mpsc::channel();
-                    deploy_pipe.rx = Some(rx);
-                    deploy_pipe.busy = true;
-                    form.deploy_log.clear();
-                    let token = form.deploy_api_token.clone();
-                    let target = form.target_domain.clone();
-                    let randomize = form.randomize_bundle_names;
-                    let which = form.deploy_tab.clone();
-                    std::thread::spawn(move || {
-                        let res = match which.as_str() {
-                            "vercel_api" => xhttp_cloud_deploy::deploy_vercel_xhttp(&token, &target, randomize, &tx),
-                            "netlify_api" => xhttp_cloud_deploy::deploy_netlify_xhttp(&token, &target, randomize, &tx),
-                            _ => Err("unknown deploy tab".into()),
-                        };
-                        let _ = tx.send(XhttpDeployWorkerMsg::Done(res));
-                    });
-                    toast = Some("Cloud deploy started — watch log below.".into());
-                }
-            }
-            if ui
-                .small_button("clear log")
-                .clicked()
-            {
-                form.deploy_log.clear();
-            }
-            if !form.deploy_last_host.is_empty()
-                && ui
-                    .small_button("copy relay host")
-                    .on_hover_text("Copy last successful deploy hostname.")
-                    .clicked()
-            {
-                ui.ctx().copy_text(form.deploy_last_host.clone());
-                toast = Some("Copied relay host.".into());
-            }
-            if ui
-                .small_button("clear token")
-                .on_hover_text(
-                    "Remove the deploy API token from RAM after you are done. Does not undo or delete the remote deployment.",
-                )
-                .clicked()
-            {
-                form.deploy_api_token.clear();
-                form.show_deploy_api_token = false;
-                toast = Some("Deploy API token cleared from memory.".into());
-            }
-        });
-        if !form.deploy_log.is_empty() {
-            form_row(ui, "Deploy log", None, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut form.deploy_log)
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(f32::INFINITY)
-                        .desired_rows(6),
-                );
-            });
-        }
-        if !form.deploy_last_host.is_empty() {
-            form_row(ui, "Last deploy host", Some("Copied into Relay Host on success. Use Clear token when finished pasting credentials."), |ui| {
-                ui.label(egui::RichText::new(&form.deploy_last_host).monospace());
-            });
-        }
-    }
-    toast
-}
-
-fn info_chip(ui: &mut egui::Ui, label: impl Into<String>, color: egui::Color32) {
-    egui::Frame::none()
-        .fill(color.linear_multiply(0.22))
-        .stroke(egui::Stroke::new(1.0, color.linear_multiply(0.58)))
-        .rounding(14.0)
-        .shadow(egui::Shadow {
-            offset: egui::vec2(0.0, 1.0),
-            blur: 6.0,
-            spread: 0.0,
-            color: egui::Color32::from_black_alpha(36),
-        })
-        .inner_margin(egui::Margin::symmetric(10.0, 4.0))
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(label.into())
-                    .size(11.6)
-                    .strong()
-                    .color(color.linear_multiply(1.22)),
-            );
-        });
-}
-
-fn ghost_action(text: &str) -> egui::Button<'_> {
-    egui::Button::new(egui::RichText::new(text).color(egui::Color32::from_gray(228)))
-        .fill(egui::Color32::from_rgb(40, 44, 52))
-        .stroke(egui::Stroke::new(1.0, CARD_STROKE_HI.linear_multiply(0.55)))
-        .min_size(egui::vec2(94.0, 29.0))
-        .rounding(8.0)
 }
 
 fn tab_button(ui: &mut egui::Ui, active: bool, text: &str) -> egui::Response {
@@ -2678,610 +1181,6 @@ fn tab_bar(ui: &mut egui::Ui, active_tab: &mut UiTab) {
         });
 }
 
-fn trust_status_label(status: &TrustStatus) -> (&'static str, egui::Color32) {
-    match status {
-        TrustStatus::NotRequired => ("not required", OK_GREEN),
-        TrustStatus::Missing => ("missing", ERR_RED),
-        TrustStatus::PresentTrusted => ("trusted", OK_GREEN),
-        TrustStatus::PresentUntrusted => ("present, not trusted", ACCENT_WARM),
-    }
-}
-
-fn bool_status(value: bool) -> (&'static str, egui::Color32) {
-    if value {
-        ("yes", OK_GREEN)
-    } else {
-        ("no", ACCENT_WARM)
-    }
-}
-
-fn trust_center_snapshot_panel(ui: &mut egui::Ui, form: &FormState) {
-    match form.to_config() {
-        Ok(cfg) => {
-            let snap = trust_center::snapshot(&cfg);
-            let manifest = support_bundle::preview_manifest();
-            let (ca_label, ca_color) = trust_status_label(&snap.ca.status);
-            let (cert_label, cert_color) = bool_status(snap.ca.cert_exists);
-            let (key_label, key_color) = bool_status(snap.ca.key_exists);
-            let sensitive_files = manifest
-                .files
-                .iter()
-                .filter(|file| file.contains_sensitive_material)
-                .count();
-
-            egui::Frame::none()
-                .fill(egui::Color32::from_rgb(29, 32, 35))
-                .stroke(egui::Stroke::new(1.0, CARD_STROKE_HI.linear_multiply(0.55)))
-                .rounding(8.0)
-                .inner_margin(egui::Margin::symmetric(12.0, 10.0))
-                .show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!("Mode: {}", snap.mode))
-                                .strong()
-                                .color(TEXT_MAIN),
-                        );
-                        ui.separator();
-                        ui.label(
-                            egui::RichText::new(format!("CA: {ca_label}"))
-                                .strong()
-                                .color(ca_color),
-                        );
-                        ui.separator();
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Support bundle: {} files, {} sensitive",
-                                manifest.files.len(),
-                                sensitive_files
-                            ))
-                            .color(TEXT_MUTED),
-                        );
-                    });
-                    ui.add_space(6.0);
-                    egui::Grid::new("trust_center_snapshot_grid")
-                        .num_columns(2)
-                        .spacing([16.0, 5.0])
-                        .show(ui, |ui| {
-                            ui.label(egui::RichText::new("CA cert").color(TEXT_LABEL));
-                            ui.label(egui::RichText::new(cert_label).color(cert_color));
-                            ui.end_row();
-
-                            ui.label(egui::RichText::new("CA key").color(TEXT_LABEL));
-                            ui.label(egui::RichText::new(key_label).color(key_color));
-                            ui.end_row();
-
-                            ui.label(egui::RichText::new("Platform probe").color(TEXT_LABEL));
-                            let probe = match snap.ca.trusted_by_platform_probe {
-                                Some(true) => ("trusted", OK_GREEN),
-                                Some(false) => ("not trusted", ACCENT_WARM),
-                                None => ("not available", TEXT_MUTED),
-                            };
-                            ui.label(egui::RichText::new(probe.0).color(probe.1));
-                            ui.end_row();
-
-                            ui.label(egui::RichText::new("Firefox profiles").color(TEXT_LABEL));
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "{} found, {} NSS DB, {} managed markers",
-                                    snap.browser.firefox_profile_count,
-                                    snap.browser.firefox_profiles_with_cert_db,
-                                    snap.browser.firefox_profiles_with_enterprise_roots_marker
-                                ))
-                                .color(TEXT_MUTED),
-                            );
-                            ui.end_row();
-
-                            ui.label(egui::RichText::new("certutil").color(TEXT_LABEL));
-                            let (certutil, certutil_color) =
-                                bool_status(snap.browser.certutil_available);
-                            ui.label(egui::RichText::new(certutil).color(certutil_color));
-                            ui.end_row();
-
-                            ui.label(egui::RichText::new("Firefox NSS CA").color(TEXT_LABEL));
-                            let firefox_nss = snap
-                                .browser
-                                .firefox_profiles_with_nss_cert
-                                .map(|n| format!("{n} profile(s)"))
-                                .unwrap_or_else(|| "certutil unavailable".to_string());
-                            ui.label(egui::RichText::new(firefox_nss).color(TEXT_MUTED));
-                            ui.end_row();
-
-                            if !snap.browser.firefox_profiles.is_empty() {
-                                ui.label(egui::RichText::new("Firefox details").color(TEXT_LABEL));
-                                ui.vertical(|ui| {
-                                    for profile in snap.browser.firefox_profiles.iter().take(4) {
-                                        let nss_ca = profile
-                                            .nss_has_cert
-                                            .map(
-                                                |has| if has { "CA present" } else { "CA missing" },
-                                            )
-                                            .unwrap_or("CA unknown");
-                                        let marker = if profile.enterprise_roots_marker {
-                                            "managed"
-                                        } else if profile.enterprise_roots_user_owned {
-                                            "user enterprise_roots"
-                                        } else {
-                                            "no marker"
-                                        };
-                                        ui.small(
-                                            egui::RichText::new(format!(
-                                                "{}: {}, {}, {}",
-                                                profile.profile_label,
-                                                if profile.has_cert_db {
-                                                    "NSS DB"
-                                                } else {
-                                                    "no NSS DB"
-                                                },
-                                                nss_ca,
-                                                marker
-                                            ))
-                                            .color(TEXT_MUTED),
-                                        );
-                                    }
-                                    if snap.browser.firefox_profiles.len() > 4 {
-                                        ui.small(
-                                            egui::RichText::new(format!(
-                                                "+{} more profile(s) in trust-center --json",
-                                                snap.browser.firefox_profiles.len() - 4
-                                            ))
-                                            .color(TEXT_MUTED),
-                                        );
-                                    }
-                                });
-                                ui.end_row();
-                            }
-
-                            ui.label(egui::RichText::new("Chrome NSS CA").color(TEXT_LABEL));
-                            let chrome_nss = snap
-                                .browser
-                                .chrome_nssdb_has_cert
-                                .map(|has| if has { "present" } else { "missing" })
-                                .unwrap_or("unavailable");
-                            let chrome_color = match snap.browser.chrome_nssdb_has_cert {
-                                Some(true) => OK_GREEN,
-                                Some(false) => ACCENT_WARM,
-                                None => TEXT_MUTED,
-                            };
-                            ui.label(egui::RichText::new(chrome_nss).color(chrome_color));
-                            ui.end_row();
-
-                            ui.label(egui::RichText::new("Signing policy").color(TEXT_LABEL));
-                            ui.label(
-                                egui::RichText::new(snap.signing.android_release_keystore_policy)
-                                    .color(TEXT_MUTED),
-                            );
-                            ui.end_row();
-                        });
-                    if let Some(action) = snap.ca.next_action {
-                        ui.add_space(6.0);
-                        ui.small(egui::RichText::new(action).color(ACCENT_WARM));
-                    }
-                });
-        }
-        Err(err) => {
-            help_callout(
-                ui,
-                "Trust snapshot unavailable",
-                &format!(
-                    "The current form does not validate yet, so the Trust Center cannot map CA requirements to a mode: {err}"
-                ),
-                ACCENT_WARM,
-            );
-        }
-    }
-}
-
-fn trust_center_tab(ui: &mut egui::Ui, form: &FormState, cmd_tx: &Sender<Cmd>) {
-    help_muted(
-        ui,
-        "Read-only trust state for this config. Install/remove/check actions reuse the existing serialized CA commands; the snapshot itself does not mutate trust stores.",
-    );
-    ui.add_space(6.0);
-    trust_center_snapshot_panel(ui, form);
-
-    ui.add_space(10.0);
-    help_subheading(ui, "Certificate actions");
-    ui.horizontal_wrapped(|ui| {
-        if ui
-            .small_button("Install CA")
-            .on_hover_text("Install or repair the local MITM CA trust. This may need admin privileges.")
-            .clicked()
-        {
-            let _ = cmd_tx.send(Cmd::InstallCa);
-        }
-        if ui
-            .small_button("Remove CA")
-            .on_hover_text("Remove the local MITM CA from OS/browser trust stores and delete local ca/ when safe.")
-            .clicked()
-        {
-            let _ = cmd_tx.send(Cmd::RemoveCa);
-        }
-        if ui
-            .small_button("Check CA")
-            .on_hover_text("Run the local OS trust probe without changing files.")
-            .clicked()
-        {
-            let _ = cmd_tx.send(Cmd::CheckCaTrusted);
-        }
-    });
-
-    ui.add_space(10.0);
-    help_subheading(ui, "Support bundle preview");
-    let manifest = support_bundle::preview_manifest();
-    ui.label(
-        egui::RichText::new(format!(
-            "{} files; auth keys {}, LAN tokens {}, deployment IDs {}, private keys {}.",
-            manifest.files.len(),
-            manifest.redaction.auth_keys,
-            manifest.redaction.lan_tokens,
-            manifest.redaction.deployment_ids,
-            manifest.redaction.private_keys,
-        ))
-        .color(TEXT_MUTED),
-    );
-    ui.add_space(4.0);
-    egui::Grid::new("trust_support_bundle_manifest_grid")
-        .num_columns(3)
-        .spacing([12.0, 4.0])
-        .striped(true)
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new("file").strong().color(TEXT_LABEL));
-            ui.label(egui::RichText::new("category").strong().color(TEXT_LABEL));
-            ui.label(egui::RichText::new("sensitive").strong().color(TEXT_LABEL));
-            ui.end_row();
-            for file in &manifest.files {
-                ui.label(egui::RichText::new(file.path).monospace());
-                ui.label(egui::RichText::new(file.category).color(TEXT_MUTED));
-                let (label, color) = bool_status(file.contains_sensitive_material);
-                ui.label(egui::RichText::new(label).color(color));
-                ui.end_row();
-            }
-        });
-
-    ui.add_space(10.0);
-    help_subheading(ui, "Docs");
-    ui.horizontal_wrapped(|ui| {
-        ui.hyperlink_to(
-            egui::RichText::new("Trust Center").size(12.0).color(ACCENT),
-            "docs/trust-center.md",
-        );
-        ui.hyperlink_to(
-            egui::RichText::new("Safety").size(12.0).color(ACCENT),
-            "docs/safety-security.md",
-        );
-        ui.hyperlink_to(
-            egui::RichText::new("Android signing")
-                .size(12.0)
-                .color(ACCENT),
-            "docs/android-signing.md",
-        );
-        ui.hyperlink_to(
-            egui::RichText::new("Doctor").size(12.0).color(ACCENT),
-            "docs/doctor.md",
-        );
-    });
-}
-
-/// In-app help: orientation, walkthrough, field tips, and maintainer links.
-fn help_walkthrough(ui: &mut egui::Ui, form: &FormState) {
-    ui.spacing_mut().item_spacing.y = 7.0;
-    help_subheading(ui, "Welcome");
-    help_muted(
-        ui,
-        &format!(
-            "{} is the desktop control room for the relay engine. It runs a local HTTP + SOCKS5 \
-             proxy: browsers and apps talk to localhost, and the selected mode decides where the \
-             request goes next: Apps Script, serverless JSON, direct fronting, or full tunnel.",
-            PRODUCT_NAME
-        ),
-    );
-
-    help_subheading(ui, "First-time checklist");
-    help_muted(
-        ui,
-        "1) Choose a mode. Apps Script and serverless JSON are no-VPS relay modes; Full needs a tunnel-node.\n\
-         2) Fill the relay credentials for that mode: Apps Script account groups, or Vercel/Netlify Base URL + AUTH_KEY.\n\
-         3) Click Install CA once for Apps Script/serverless JSON/direct fronting, then Check CA. Full mode does not need local MITM CA.\n\
-         4) Keep front_domain as www.google.com and run Scan IPs / SNI tests if connections time out.\n\
-         5) Save config, then Start. Set your browser or system proxy to the HTTP port; SOCKS5 is optional.\n\
-         6) Use Test relay and Doctor early. They are faster than guessing.",
-    );
-
-    help_subheading(ui, "Trust Center (certificates & signing)");
-    help_muted(
-        ui,
-        "CA install/remove, Firefox NSS vs OS trust, Android user-CA limits, APK signing policy, \
-         and diagnostic redaction expectations are summarized in one maintainer-facing hub doc.",
-    );
-    trust_center_snapshot_panel(ui, form);
-    ui.add_space(4.0);
-    ui.hyperlink_to(
-        egui::RichText::new("Open docs/trust-center.md")
-            .size(12.0)
-            .color(ACCENT),
-        "docs/trust-center.md",
-    );
-
-    help_subheading(ui, "Backend registry (deploy map)");
-    help_muted(
-        ui,
-        "Canonical table of Apps Script helpers, Cloudflare Worker exit, serverless JSON relays, tunnel-node, \
-         compat probes, and Doctor/Test wiring — before dedicated Backend Registry UI lands.",
-    );
-    ui.add_space(4.0);
-    ui.hyperlink_to(
-        egui::RichText::new("Open docs/backend-registry.md")
-            .size(12.0)
-            .color(ACCENT),
-        "docs/backend-registry.md",
-    );
-
-    help_subheading(ui, "Choose by goal");
-    ui.horizontal_wrapped(|ui| {
-        mode_goal_card(
-            ui,
-            "Fastest normal setup",
-            "Use Apps Script. Deploy Code.gs, add one account group, install the CA, then Start.",
-            ACCENT,
-        );
-        mode_goal_card(
-            ui,
-            "No Google script quota pool yet",
-            "Use Serverless JSON. Deploy Vercel or Netlify JSON relay, set AUTH_KEY, paste Base URL.",
-            ACCENT_MINT,
-        );
-        mode_goal_card(
-            ui,
-            "Need only setup access",
-            "Use Direct to reach script.google.com or tested fronting-group targets without relay credentials.",
-            ACCENT_WARM,
-        );
-        mode_goal_card(
-            ui,
-            "Need no local CA",
-            "Use Full tunnel with tunnel-node. It needs a VPS but avoids local HTTPS interception.",
-            egui::Color32::from_rgb(170, 145, 225),
-        );
-    });
-
-    help_subheading(ui, "Modes - pick the story that matches your network");
-    help_muted(
-        ui,
-        "- Apps Script: classic no-VPS path through your Google Apps Script deployment.\n\
-         - Serverless JSON: no-VPS fetch relay; deploy tools/vercel-json-relay or tools/netlify-json-relay.\n\
-         - Direct: no-relay SNI rewrite for Google plus configured fronting groups such as Vercel, Fastly, and Netlify/CloudFront.\n\
-         - Full tunnel: routes through Apps Script + tunnel-node; no local MITM certificate, but requires server infrastructure.",
-    );
-    help_callout(
-        ui,
-        "Mode requirements at a glance",
-        "Apps Script needs Code.gs, at least one account group, and local CA trust. Serverless JSON needs a Vercel/Netlify JSON endpoint, AUTH_KEY, and local CA trust. Direct needs only edge/SNI settings but is not a full proxy. Full tunnel needs CodeFull.gs plus tunnel-node on a VPS and does not use the local CA.",
-        ACCENT_MINT,
-    );
-
-    help_subheading(ui, "Backends, tools, and what they are not");
-    help_muted(
-        ui,
-        "Native desktop modes are Apps Script, serverless JSON, Direct, and Full tunnel. Cloudflare Worker is an optional Apps Script exit. Vercel XHTTP and Netlify XHTTP helpers are for external Xray/V2Ray backends, so they are documented as tools rather than selectable desktop modes. Field notes collect tested edge-name candidates without raw forum noise.",
-    );
-    help_callout(
-        ui,
-        "Avoid split-brain setup",
-        "Do not mix native Serverless JSON fields with XHTTP helper configs. The desktop UI talks to JSON/base64 fetch relays. XHTTP helpers are for Xray/V2Ray clients and have their own host/path/SNI rules.",
-        ACCENT_WARM,
-    );
-    help_callout(
-        ui,
-        "Defaults that should usually stay put",
-        "Apps Script: front_domain www.google.com, local HTTP/SOCKS on 127.0.0.1, verify SSL on. Serverless JSON: Base URL is only the Vercel/Netlify origin, relay path /api/api, max body 4 MiB, verify TLS on. External XHTTP: use the in-app VLESS generator for Vercel and Netlify presets. Vercel candidates include react.dev, nextjs.org, cursor.com, and Vercel subdomains. Netlify candidates include kubernetes.io, helm.sh, letsencrypt.org, and related Helm/Kubernetes/SIG subdomains. Host should usually remain your own deployed site domain.",
-        ACCENT_MINT,
-    );
-
-    help_subheading(ui, "Sharing and per-app routing");
-    help_muted(
-        ui,
-        "Desktop per-app routing is app-level: point one browser profile, Telegram, xray, or any app with proxy settings at 127.0.0.1:HTTP/SOCKS while other apps stay direct. To share to other devices, bind to 0.0.0.0 and set Allowed IPs; SOCKS5 cannot carry the LAN token header. Android is different: VPN mode has native app splitting, and Proxy-only mode lets individual apps opt in through their own proxy settings.",
-    );
-
-    help_subheading(ui, "If something looks stuck");
-    help_muted(
-        ui,
-        "Timeouts: wrong google_ip, poisoned DNS, blocked SNI, stale Apps Script deployment, or backend relay timeout.\n\
-         HTML instead of JSON: Apps Script access is not Anyone, or platform protection/routing is in front of the relay.\n\
-         Quota / 504 spikes: add deployment IDs/accounts, lower fan-out, or enable relay_rate_limit_qps.\n\
-         Certificate warnings: Install CA again or run Doctor. Firefox may need restart/NSS handling.",
-    );
-
-    help_subheading(ui, "Account groups explained");
-    help_muted(
-        ui,
-        "A group is one relay identity, usually one Google account. Inside that group, one AUTH_KEY protects all deployment IDs from that account. Multiple IDs inside the same group help rotation/fallback and can smooth transient deployment failures, but they still share that Google account's daily quota and concurrency limits. Multiple groups are different accounts or deliberately separated quota pools. The engine can pick across groups, respect enabled/disabled state, and use weights so a stronger account carries more load.",
-    );
-    help_callout(
-        ui,
-        "Practical group recipe",
-        "Start with one group: label it, paste one AUTH_KEY, paste one or more deployment IDs from the same Apps Script account, then Test relay. Add a second group only when you have a second account or want a backup identity. If quota pressure rises, add capacity first; if failures spike, lower fan-out/rate before adding aggressive speed knobs.",
-        ACCENT,
-    );
-
-    help_subheading(ui, "Advanced tuning recipe");
-    help_muted(
-        ui,
-        "Optimize in this order: 1) verify google_ip/front_domain/SNI first, 2) add account groups or deployment IDs for capacity, 3) enable runtime_auto_tune with balanced profile, 4) tune parallel_relay only if multiple healthy IDs exist, 5) increase range_parallelism only for large downloads, 6) add relay_rate_limit_qps when quotas or 504 storms appear. Never change several knobs at once; the Dashboard should tell you which limit moved.",
-    );
-
-    egui::CollapsingHeader::new(
-        egui::RichText::new("Tips for each area of this window")
-            .strong()
-            .color(ACCENT)
-            .size(13.0),
-    )
-    .id_source("help_area_tips")
-    .default_open(false)
-    .show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 6.0;
-        help_subheading(ui, "Mode");
-        help_muted(ui, "Changing mode reshapes the whole form. Apps Script uses account groups, serverless JSON uses Base URL + AUTH_KEY, Direct is no-relay fronting, and Full is tunnel-node based.");
-        help_subheading(ui, "Apps Script relay / Multi-account pools");
-        help_muted(ui, "Each enabled group is one Google account: its own AUTH_KEY and one-or-more deployment IDs. We rotate IDs to spread load. Labels are optional but help you read logs.");
-        help_subheading(ui, "Serverless JSON relay");
-        help_muted(ui, "Base URL is the Vercel or Netlify app origin, relay path is usually /api/api, and auth key must match the AUTH_KEY environment variable. Protection or routing pages must not sit in front of the relay endpoint.");
-        help_subheading(ui, "Backend tools");
-        help_muted(ui, "Use the Backend tools section to decide which file or VPS component to deploy: Code.gs for Apps Script, CodeCloudflareWorker.gs plus a Worker when you want Cloudflare egress, Vercel/Netlify JSON for native vercel_edge, separate Vercel XHTTP and Netlify XHTTP helpers for external Xray/V2Ray, and tunnel-node for full mode.");
-        help_subheading(ui, "Network");
-        help_muted(ui, "google_ip is the IPv4 of a Google edge that accepts TLS with front_domain as SNI. Ports default to 8085/8086 but can move if those are busy. Listen host stays on 127.0.0.1 unless you know you need otherwise.");
-        help_subheading(ui, "Sharing");
-        help_muted(ui, "Local-only is safest. LAN sharing is useful for another phone/laptop on the same Wi-Fi, but set Allowed IPs before exposing SOCKS5. A token protects HTTP clients that can add X-MHRV-F-Token; it is not a SOCKS5 password.");
-        help_subheading(ui, "Profiles");
-        help_muted(ui, "Save named snapshots (home / office / experimental) so you can flip between known-good configs without hand-editing JSON.");
-        help_subheading(ui, "Traffic + Dashboard");
-        help_muted(ui, "Once running, watch relay failures, degrade level, and quota pressure. Spikes usually mean “add capacity” (more deployments / accounts) or “slow down” (rate limits, smaller parallel_relay, lower range_parallelism / bigger range_chunk_bytes).");
-        help_subheading(ui, "Updates");
-        help_muted(ui, "Check for updates talks to GitHub Releases. If your ISP rate-limits GitHub, start the proxy first and check again — the UI can route the request through the relay bucket.");
-    });
-
-    egui::CollapsingHeader::new(
-        egui::RichText::new("Advanced options — what changes when you tweak them")
-            .strong()
-            .color(ACCENT)
-            .size(13.0),
-    )
-    .id_source("help_advanced_options")
-    .default_open(false)
-    .show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 6.0;
-        help_muted(
-            ui,
-            "Rule of thumb: increase speed knobs only when you have enough script IDs/accounts; otherwise you often just convert “slow” into “quota exhausted”.",
-        );
-
-        help_subheading(ui, "parallel_relay (fan-out per request)");
-        help_muted(
-            ui,
-            "Higher = lower tail latency (less “one slow script stalls the page”), but burns quota faster because it launches multiple relay calls for the same request.",
-        );
-
-        help_subheading(ui, "relay_rate_limit_qps / burst");
-        help_muted(
-            ui,
-            "A soft governor: lower values smooth spikes and reduce 504 storms, but can make pages feel slower because requests queue instead of bursting.",
-        );
-
-        help_subheading(ui, "range_parallelism / range_chunk_bytes");
-        help_muted(
-            ui,
-            "Affects large downloads: higher parallelism is faster but increases in-flight relay calls; larger chunks reduce call count (quota-friendly) but each call runs longer.",
-        );
-
-        help_subheading(ui, "runtime_auto_tune + runtime_profile");
-        help_muted(
-            ui,
-            "Auto-picks safe defaults for a few hot knobs. eco = quota-friendly and stable; max_speed = fastest but most quota-hungry.",
-        );
-
-        help_subheading(ui, "upstream_socks5");
-        help_muted(
-            ui,
-            "Only affects raw TCP flows that bypass the relay (passthrough / non-HTTP). Useful when you already run xray/sing-box locally; it does not change Apps Script-relayed HTTP/HTTPS.",
-        );
-
-        help_subheading(ui, "passthrough_hosts / domain_overrides");
-        help_muted(
-            ui,
-            "Use these to fix one broken site without changing global behavior. passthrough saves quota and avoids MITM for that host; domain_overrides can force direct/relay/sni_rewrite and can disable chunking (never_chunk) for fragile anti-bot flows.",
-        );
-
-        help_subheading(ui, "verify_ssl");
-        help_muted(
-            ui,
-            "Keep ON unless you understand the risk. Turning it OFF makes the outer TLS tunnel accept a MITM middlebox — it may ‘work’ on hostile networks, but you lose certificate validation on the outer hop.",
-        );
-
-        help_subheading(ui, "youtube_via_relay");
-        help_muted(
-            ui,
-            "Routes YouTube HTML/API through Apps Script. Can bypass Restricted-Mode/SafeSearch-on-SNI issues, but costs quota and uses the fixed Apps Script User-Agent. Thumbnails/assets stay on SNI rewrite; googlevideo.com is not forced onto the normal Google frontend IP.",
-        );
-
-        ui.add_space(4.0);
-        ui.hyperlink_to(
-            egui::RichText::new("Open full advanced reference (docs/advanced-options.md)")
-                .size(12.0)
-                .color(ACCENT),
-            "docs/advanced-options.md",
-        );
-    });
-
-    egui::CollapsingHeader::new(
-        egui::RichText::new("Privacy & trust — plain language")
-            .strong()
-            .color(ACCENT)
-            .size(13.0),
-    )
-    .id_source("help_privacy")
-    .default_open(false)
-    .show(ui, |ui| {
-        help_muted(
-            ui,
-            "Your traffic touches Google’s network and your own Apps Script code. MITM mode can read HTTPS on this machine exactly like any debugging proxy — only install the CA on devices you control. \
-             Full tunnel shifts trust to whatever tunnel node you operate. When in doubt, read the Security section in the README.",
-        );
-    });
-
-    help_subheading(ui, "Android companion");
-    help_muted(
-        ui,
-        "The mobile build wraps the same Rust engine with a VPN/proxy UI. Install the APK from the maintainer releases page, walk through the in-app Help section there, then mirror the deployment IDs + keys you use on desktop.",
-    );
-
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        help_muted(ui, "Maintainer repository:");
-        ui.add_space(4.0);
-        ui.hyperlink_to(
-            egui::RichText::new(GITHUB_REPO_URL)
-                .size(12.0)
-                .color(ACCENT),
-            GITHUB_REPO_URL,
-        );
-    });
-}
-
-/// A primary accent-filled button. Used for the headline action in a row
-/// (Start / Stop / SNI pool).
-fn primary_button(text: &str) -> egui::Button<'_> {
-    egui::Button::new(
-        egui::RichText::new(text)
-            .color(egui::Color32::WHITE)
-            .strong(),
-    )
-    .fill(ACCENT.linear_multiply(0.95))
-    .stroke(egui::Stroke::new(1.0, ACCENT.linear_multiply(1.15)))
-    .min_size(egui::vec2(130.0, 34.0))
-    .rounding(8.0)
-}
-
-/// A compact form row: label on the left (fixed width for vertical alignment),
-/// widget on the right filling the remaining space.
-fn form_row(
-    ui: &mut egui::Ui,
-    label: &str,
-    hover: Option<&str>,
-    widget: impl FnOnce(&mut egui::Ui),
-) {
-    ui.horizontal(|ui| {
-        let resp = ui.add_sized(
-            [FORM_LABEL_WIDTH, 24.0],
-            egui::Label::new(egui::RichText::new(label).color(TEXT_LABEL).strong()),
-        );
-        if let Some(h) = hover {
-            resp.on_hover_text(h);
-        }
-        ui.add_space(FORM_GAP);
-        widget(ui);
-    });
-}
-
 impl App {
     fn save_current_config(&mut self) -> Result<PathBuf, String> {
         let cfg = self.form.to_config()?;
@@ -3318,200 +1217,16 @@ impl App {
             }
         }
     }
-
-    fn poll_xhttp_cloud_deploy(&mut self, ctx: &egui::Context) {
-        let Some(rx) = self.xhttp_deploy.rx.take() else {
-            return;
-        };
-        loop {
-            match rx.try_recv() {
-                Ok(XhttpDeployWorkerMsg::Log(line)) => {
-                    self.form.xhttp_generator.deploy_log.push_str(&line);
-                    self.form.xhttp_generator.deploy_log.push('\n');
-                }
-                Ok(XhttpDeployWorkerMsg::Done(res)) => {
-                    self.xhttp_deploy.busy = false;
-                    self.xhttp_deploy.rx = None;
-                    match res {
-                        Ok(host) => {
-                            self.form.xhttp_generator.deploy_last_host = host.clone();
-                            self.form.xhttp_generator.relay_host = host;
-                            self.toast =
-                                Some(("XHTTP cloud deploy finished.".into(), Instant::now()));
-                        }
-                        Err(e) => self.toast = Some((e, Instant::now())),
-                    }
-                    ctx.request_repaint();
-                    return;
-                }
-                Err(TryRecvError::Empty) => {
-                    self.xhttp_deploy.rx = Some(rx);
-                    ctx.request_repaint_after(Duration::from_millis(150));
-                    return;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    self.xhttp_deploy.busy = false;
-                    self.xhttp_deploy.rx = None;
-                    return;
-                }
-            }
-        }
-    }
-
-    fn show_first_run_wizard(&mut self, ui: &mut egui::Ui) {
-        section(ui, "First-run wizard", |ui| {
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("Step").color(egui::Color32::from_gray(150)));
-                for (idx, title) in ["Mode", "Relay", "CA", "Diagnostics"].iter().enumerate() {
-                    let selected = self.form.wizard_step == idx;
-                    if ui
-                        .selectable_label(selected, *title)
-                        .on_hover_text("Jump to this setup step")
-                        .clicked()
-                    {
-                        self.form.wizard_step = idx;
-                    }
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("Hide").clicked() {
-                        self.form.show_first_run_wizard = false;
-                    }
-                });
-            });
-            ui.separator();
-
-            match self.form.wizard_step {
-                0 => {
-                    help_muted(ui, "Choose the transport you want to set up first. Apps Script is the classic path; serverless JSON is the no-VPS Vercel/Netlify fetch relay; full mode is for the separate tunnel-node path.");
-                    ui.horizontal(|ui| {
-                        if ui.button("Apps Script").clicked() {
-                            self.form.mode = "apps_script".into();
-                            self.form.wizard_step = 1;
-                        }
-                        if ui.button("Serverless JSON").clicked() {
-                            self.form.mode = "vercel_edge".into();
-                            self.form.wizard_step = 1;
-                        }
-                        if ui.button("Full tunnel").clicked() {
-                            self.form.mode = "full".into();
-                            self.form.wizard_step = 1;
-                        }
-                    });
-                }
-                1 => {
-                    if self.form.mode == "vercel_edge" {
-                        help_muted(ui, "Deploy tools/vercel-json-relay or tools/netlify-json-relay, set AUTH_KEY, redeploy, confirm /api/api returns JSON, and paste the deployment URL here.");
-                        form_row(ui, "Base URL", None, |ui| {
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.form.vercel_base_url)
-                                    .hint_text(
-                                        "https://your-project.vercel.app or https://your-site.netlify.app",
-                                    )
-                                    .desired_width(f32::INFINITY),
-                            );
-                        });
-                        form_row(ui, "Relay path", None, |ui| {
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.form.vercel_relay_path)
-                                    .hint_text("/api/api")
-                                    .desired_width(f32::INFINITY),
-                            );
-                        });
-                        form_row(ui, "Auth key", None, |ui| {
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.form.vercel_auth_key)
-                                    .password(!self.form.show_vercel_auth_key)
-                                    .desired_width(f32::INFINITY),
-                            );
-                        });
-                    } else if self.form.mode == "direct" {
-                        help_muted(ui, "Direct mode is a no-relay SNI-rewrite path. Use it to reach script.google.com, or to use configured fronting groups for Google/Vercel/Fastly/Netlify-style targets.");
-                    } else {
-                        help_muted(ui, "Add at least one Apps Script account group under Advanced -> Multi-account pools. Each enabled group needs AUTH_KEY and one or more deployment IDs.");
-                        if ui.button("+ Add Apps Script group").clicked() {
-                            self.form.account_groups.push(AccountGroupForm {
-                                label: String::new(),
-                                enabled: true,
-                                weight: 1,
-                                auth_key: String::new(),
-                                script_ids: String::new(),
-                                show_auth_key: false,
-                            });
-                        }
-                    }
-                    ui.horizontal(|ui| {
-                        if ui.button("Test relay").clicked() {
-                            match self.form.to_config() {
-                                Ok(cfg) => {
-                                    let _ = self.cmd_tx.send(Cmd::Test(cfg));
-                                }
-                                Err(e) => {
-                                    self.toast =
-                                        Some((format!("Cannot test: {}", e), Instant::now()))
-                                }
-                            }
-                        }
-                        if ui.button("Next").clicked() {
-                            self.form.wizard_step = 2;
-                        }
-                    });
-                }
-                2 => {
-                    if self.form.mode == "full" {
-                        help_muted(ui, "Full mode does not need the local MITM CA. Continue to diagnostics after the tunnel-node side is ready.");
-                    } else {
-                        help_muted(ui, "Apps Script and serverless JSON MITM HTTPS locally. Install the generated CA into your OS trust store, then check trust status. Firefox may need restart or NSS/enterprise roots handling.");
-                        ui.horizontal(|ui| {
-                            if ui.button("Install CA").clicked() {
-                                let _ = self.cmd_tx.send(Cmd::InstallCa);
-                            }
-                            if ui.button("Check CA").clicked() {
-                                let _ = self.cmd_tx.send(Cmd::CheckCaTrusted);
-                            }
-                        });
-                    }
-                    if ui.button("Next").clicked() {
-                        self.form.wizard_step = 3;
-                    }
-                }
-                _ => {
-                    help_muted(ui, "Run Doctor and Test relay. PASS means the local config can reach the relay. In full mode, Doctor skips the JSON probe and you should verify by browsing through the tunnel.");
-                    ui.horizontal(|ui| {
-                        if ui.button("Doctor").clicked() {
-                            match self.form.to_config() {
-                                Ok(cfg) => {
-                                    let _ = self.cmd_tx.send(Cmd::Doctor(cfg));
-                                }
-                                Err(e) => {
-                                    self.toast =
-                                        Some((format!("Cannot run doctor: {}", e), Instant::now()))
-                                }
-                            }
-                        }
-                        if ui.button("Test relay").clicked() {
-                            match self.form.to_config() {
-                                Ok(cfg) => {
-                                    let _ = self.cmd_tx.send(Cmd::Test(cfg));
-                                }
-                                Err(e) => {
-                                    self.toast =
-                                        Some((format!("Cannot test: {}", e), Instant::now()))
-                                }
-                            }
-                        }
-                        if ui.button("Finish").clicked() {
-                            self.form.show_first_run_wizard = false;
-                        }
-                    });
-                }
-            }
-        });
-    }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        self.poll_xhttp_cloud_deploy(ctx);
+        if let Some(msg) =
+            poll_xhttp_cloud_deploy(&mut self.form.xhttp_generator, &mut self.xhttp_deploy, ctx)
+        {
+            self.toast = Some((msg, Instant::now()));
+            ctx.request_repaint();
+        }
         if self.last_poll.elapsed() > Duration::from_millis(700) {
             let _ = self.cmd_tx.send(Cmd::PollStats);
             self.last_poll = Instant::now();
@@ -3721,7 +1436,7 @@ impl eframe::App for App {
             tab_bar(ui, &mut self.active_tab);
             ui.add_space(8.0);
             if self.form.show_first_run_wizard {
-                self.show_first_run_wizard(ui);
+                show_first_run_wizard(ui, &mut self.form, &self.cmd_tx, &mut self.toast);
             }
 
             if self.active_tab == UiTab::Help {
@@ -3898,53 +1613,12 @@ impl eframe::App for App {
                     "Native modes are selected above. The helpers below are deployment recipes or companion relays; use the row that matches the mode or external client you actually run.",
                 );
                 ui.add_space(4.0);
-                tool_help_row(
-                    ui,
-                    "Apps Script Code.gs",
-                    "default backend for apps_script mode.",
-                    "Deploy assets/apps_script/Code.gs as a Web app, set AUTH_KEY, then paste deployment IDs into Multi-account pools.",
-                    Some("assets/apps_script/Code.gs"),
-                );
-                ui.separator();
-                tool_help_row(
-                    ui,
-                    "Cloudflare Worker exit",
-                    "optional Apps Script-compatible exit path.",
-                    "Deploy tools/cloudflare-worker-json-relay, then use assets/apps_script/CodeCloudflareWorker.gs in Apps Script when you want Worker egress.",
-                    Some("tools/cloudflare-worker-json-relay"),
-                );
-                ui.separator();
-                tool_help_row(
-                    ui,
-                    "Vercel Edge JSON",
-                    "native vercel_edge-compatible mode with no VPS.",
-                    "Deploy tools/vercel-json-relay, set AUTH_KEY, disable Deployment Protection, then paste Base URL and key in this UI.",
-                    Some("tools/vercel-json-relay"),
-                );
-                ui.separator();
-                tool_help_row(
-                    ui,
-                    "Netlify Edge JSON",
-                    "native vercel_edge-compatible mode with no VPS.",
-                    "Deploy tools/netlify-json-relay, set AUTH_KEY, confirm /api/api returns JSON, then paste the Netlify site URL and key in this UI.",
-                    Some("tools/netlify-json-relay"),
-                );
-                ui.separator();
-                tool_help_row(
-                    ui,
-                    "Vercel XHTTP helper",
-                    "external Xray/V2Ray helper for a Vercel front, not a native desktop mode.",
-                    "Use tools/vercel-xhttp-relay first, or tools/vercel-xhttp-relay-node when the Edge runtime is not a good fit. Keep Host set to your Vercel project domain.",
-                    Some("tools/vercel-xhttp-relay"),
-                );
-                ui.separator();
-                tool_help_row(
-                    ui,
-                    "Netlify XHTTP helper",
-                    "external Xray/V2Ray helper for a Netlify front, not a native desktop mode.",
-                    "Use tools/netlify-xhttp-relay with your own XHTTP backend. Start with your deployed domain; for Address/SNI tests load the in-app generator preset and keep Host on your deployed site unless you knowingly accept a mismatched-front profile.",
-                    Some("tools/netlify-xhttp-relay"),
-                );
+                for (idx, entry) in backend_tool_entries().iter().copied().enumerate() {
+                    render_tool_help_row(ui, entry);
+                    if idx + 1 != backend_tool_entries().len() {
+                        ui.separator();
+                    }
+                }
                 ui.add_space(8.0);
                 help_subheading(ui, "XHTTP VLESS generator");
                 if let Some(msg) =
@@ -3952,22 +1626,6 @@ impl eframe::App for App {
                 {
                     self.toast = Some((msg, Instant::now()));
                 }
-                ui.separator();
-                tool_help_row(
-                    ui,
-                    "Field notes",
-                    "cleaned edge candidates and external-client caveats.",
-                    "See docs/field-notes.md for Google SNI candidates, Vercel Address/SNI names, Netlify/Fastly/CloudFront notes, and rejected risky items.",
-                    Some("docs/field-notes.md"),
-                );
-                ui.separator();
-                tool_help_row(
-                    ui,
-                    "tunnel-node",
-                    "server component for full mode.",
-                    "Build and run tunnel-node on your VPS, point the full-mode Apps Script channel at it, then verify with an IP-check page.",
-                    Some("tunnel-node"),
-                );
             });
 
             }
@@ -4663,7 +2321,16 @@ impl eframe::App for App {
 
             // ── Status + stats card ────────────────────────────────────────
             if self.active_tab == UiTab::Monitor {
-            let (running, started_at, stats, ca_trusted, last_test_msg, per_site) = {
+            let (
+                running,
+                started_at,
+                stats,
+                ca_trusted,
+                last_test_msg,
+                per_site,
+                doctor_report,
+                doctor_at,
+            ) = {
                 let s = self.shared.state.lock().unwrap();
                 (
                     s.running,
@@ -4672,6 +2339,8 @@ impl eframe::App for App {
                     s.ca_trusted,
                     s.last_test_msg.clone(),
                     s.last_per_site.clone(),
+                    s.last_doctor_report.clone(),
+                    s.last_doctor_at,
                 )
             };
 
@@ -4683,36 +2352,9 @@ impl eframe::App for App {
             };
             section(ui, &status_title, |ui| {
                 if let Some(s) = stats {
-                    // Compact two-column layout so 7 metrics fit in ~4 rows
-                    // instead of a tall vertical strip.
-                    let rows: Vec<(&str, String)> = vec![
-                        ("relay calls", s.relay_calls.to_string()),
-                        ("failures", s.relay_failures.to_string()),
-                        ("coalesced", s.coalesced.to_string()),
-                        ("today calls", s.today_calls.to_string()),
-                        (
-                            "cache hits",
-                            format!(
-                                "{} / {}  ({:.0}%)",
-                                s.cache_hits,
-                                s.cache_hits + s.cache_misses,
-                                s.hit_rate()
-                            ),
-                        ),
-                        ("cache size", format!("{} KB", s.cache_bytes / 1024)),
-                        ("bytes relayed", fmt_bytes(s.bytes_relayed)),
-                        ("today bytes", fmt_bytes(s.today_bytes)),
-                        ("reset in", fmt_duration(Duration::from_secs(s.today_reset_secs))),
-                        ("degrade", format!("L{} ({})", s.degrade_level, String::from_utf8_lossy(&s.degrade_reason).trim_matches(char::from(0)).trim())),
-                        (
-                            "active scripts",
-                            format!(
-                                "{} / {}",
-                                s.total_scripts - s.blacklisted_scripts,
-                                s.total_scripts
-                            ),
-                        ),
-                    ];
+                    // Compact two-column layout so all core metrics fit in ~6
+                    // rows instead of a tall vertical strip.
+                    let rows = traffic_stat_rows(&s);
                     egui::Grid::new("stats")
                         .num_columns(4)
                         .spacing([16.0, 4.0])
@@ -4770,6 +2412,9 @@ impl eframe::App for App {
                 help_muted(ui, "active scripts — deployments still participating vs temporarily blacklisted.");
             });
 
+            ui.add_space(8.0);
+            render_doctor_summary_card(ui, doctor_report.as_ref(), doctor_at);
+
             // ── Dashboard widgets ───────────────────────────────────────────
             let (degrade_history, recent_log) = {
                 let s = self.shared.state.lock().unwrap();
@@ -4778,12 +2423,7 @@ impl eframe::App for App {
             section(ui, "Dashboard", |ui| {
                 if let Some(s) = stats {
                     // Quota pressure (very rough): show current call rate since UTC midnight.
-                    let secs_since_reset = 86_400u64.saturating_sub(s.today_reset_secs.min(86_400));
-                    let calls_per_hour = if secs_since_reset == 0 {
-                        0.0
-                    } else {
-                        (s.today_calls as f64) / (secs_since_reset as f64) * 3600.0
-                    };
+                    let calls_per_hour = quota_calls_per_hour(s.today_calls, s.today_reset_secs);
                     egui::Frame::none()
                         .fill(CARD_FILL)
                         .stroke(egui::Stroke::new(1.0, CARD_STROKE))
@@ -4803,18 +2443,7 @@ impl eframe::App for App {
                     ui.add_space(6.0);
 
                     // Degradation timeline: show only changes (level/reason).
-                    let mut changes: Vec<(Duration, u8, String)> = Vec::new();
-                    let mut last: Option<(u8, &str)> = None;
-                    for (t, lvl, reason) in degrade_history.iter() {
-                        let r = reason.as_str();
-                        if last.map(|(pl, pr)| pl == *lvl && pr == r).unwrap_or(false) {
-                            continue;
-                        }
-                        last = Some((*lvl, r));
-                        changes.push((t.elapsed(), *lvl, reason.clone()));
-                    }
-                    changes.reverse();
-                    changes.truncate(10);
+                    let changes = degradation_changes(&degrade_history);
                     egui::Frame::none()
                         .fill(CARD_FILL)
                         .stroke(egui::Stroke::new(1.0, CARD_STROKE))
@@ -4834,20 +2463,7 @@ impl eframe::App for App {
                     ui.add_space(6.0);
 
                     // Recent failures / notable events: mine the Recent log for high-signal lines.
-                    let mut notable: Vec<String> = recent_log
-                        .into_iter()
-                        .filter(|l| {
-                            l.contains("degrade:")
-                                || l.contains("range-parallel:")
-                                || l.contains("timeout")
-                                || l.contains("unreachable")
-                                || l.contains("overloaded")
-                                || l.contains("quota")
-                                || l.contains("429")
-                        })
-                        .collect();
-                    notable.reverse();
-                    notable.truncate(12);
+                    let notable = notable_failure_lines(recent_log);
                     egui::Frame::none()
                         .fill(CARD_FILL)
                         .stroke(egui::Stroke::new(1.0, CARD_STROKE))
@@ -5540,26 +3156,6 @@ impl App {
     }
 }
 
-fn fmt_duration(d: Duration) -> String {
-    let s = d.as_secs();
-    format!("{:02}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)
-}
-
-fn fmt_bytes(b: u64) -> String {
-    const K: u64 = 1024;
-    const M: u64 = K * K;
-    const G: u64 = M * K;
-    if b >= G {
-        format!("{:.2} GB", b as f64 / G as f64)
-    } else if b >= M {
-        format!("{:.2} MB", b as f64 / M as f64)
-    } else if b >= K {
-        format!("{:.1} KB", b as f64 / K as f64)
-    } else {
-        format!("{} B", b)
-    }
-}
-
 // ---------- Background thread: owns the tokio runtime + proxy lifecycle ----------
 
 fn background_thread(shared: Arc<Shared>, rx: Receiver<Cmd>) {
@@ -5738,14 +3334,14 @@ fn background_thread(shared: Arc<Shared>, rx: Receiver<Cmd>) {
                 rt.spawn(async move {
                     let report = doctor::run(&cfg).await;
                     for it in &report.items {
-                        let level = match it.level {
-                            doctor::DoctorLevel::Ok => "OK",
-                            doctor::DoctorLevel::Warn => "WARN",
-                            doctor::DoctorLevel::Fail => "FAIL",
-                        };
                         push_log(
                             &shared2,
-                            &format!("[doctor] [{}] {} — {}", level, it.id, it.title),
+                            &format!(
+                                "[doctor] [{}] {} — {}",
+                                doctor_level_label(&it.level),
+                                it.id,
+                                it.title
+                            ),
                         );
                         if !it.detail.trim().is_empty() {
                             push_log(&shared2, &format!("[doctor] {}", it.detail));
@@ -5761,6 +3357,11 @@ fn background_thread(shared: Arc<Shared>, rx: Receiver<Cmd>) {
                             if report.ok() { "OK" } else { "needs attention" }
                         ),
                     );
+                    {
+                        let mut st = shared2.state.lock().unwrap();
+                        st.last_doctor_report = Some(report.clone());
+                        st.last_doctor_at = Some(Instant::now());
+                    }
                 });
             }
             Ok(Cmd::DoctorFix(cfg)) => {
@@ -5769,15 +3370,15 @@ fn background_thread(shared: Arc<Shared>, rx: Receiver<Cmd>) {
                 rt.spawn(async move {
                     let (before, fixes, after) = doctor::run_with_fixes(&cfg).await;
                     push_log(&shared2, "[doctor] BEFORE:");
-                    for it in before.items {
-                        let level = match it.level {
-                            doctor::DoctorLevel::Ok => "OK",
-                            doctor::DoctorLevel::Warn => "WARN",
-                            doctor::DoctorLevel::Fail => "FAIL",
-                        };
+                    for it in &before.items {
                         push_log(
                             &shared2,
-                            &format!("[doctor] [{}] {} — {}", level, it.id, it.title),
+                            &format!(
+                                "[doctor] [{}] {} — {}",
+                                doctor_level_label(&it.level),
+                                it.id,
+                                it.title
+                            ),
                         );
                         if !it.detail.trim().is_empty() {
                             push_log(&shared2, &format!("[doctor] {}", it.detail));
@@ -5798,24 +3399,29 @@ fn background_thread(shared: Arc<Shared>, rx: Receiver<Cmd>) {
                         }
                     }
                     push_log(&shared2, "[doctor] AFTER:");
-                    for it in after.items {
-                        let level = match it.level {
-                            doctor::DoctorLevel::Ok => "OK",
-                            doctor::DoctorLevel::Warn => "WARN",
-                            doctor::DoctorLevel::Fail => "FAIL",
-                        };
+                    for it in &after.items {
                         push_log(
                             &shared2,
-                            &format!("[doctor] [{}] {} — {}", level, it.id, it.title),
+                            &format!(
+                                "[doctor] [{}] {} — {}",
+                                doctor_level_label(&it.level),
+                                it.id,
+                                it.title
+                            ),
                         );
                         if !it.detail.trim().is_empty() {
                             push_log(&shared2, &format!("[doctor] {}", it.detail));
                         }
-                        if let Some(fix) = it.fix {
+                        if let Some(fix) = &it.fix {
                             push_log(&shared2, &format!("[doctor] fix: {}", fix));
                         }
                     }
                     push_log(&shared2, "[doctor] done");
+                    {
+                        let mut st = shared2.state.lock().unwrap();
+                        st.last_doctor_report = Some(after.clone());
+                        st.last_doctor_at = Some(Instant::now());
+                    }
                 });
             }
             Ok(Cmd::InstallCa) => {
@@ -6080,90 +3686,6 @@ fn install_ui_tracing(shared: Arc<Shared>) {
         .with_ansi(false)
         .with_writer(writer)
         .try_init();
-}
-
-/// Where we drop downloaded release assets. Prefer the OS user Downloads
-/// dir (via the directories crate that's already in our tree), fall back
-/// to the user-data dir for platforms that don't expose one (edge case).
-fn downloads_dir() -> std::path::PathBuf {
-    directories::UserDirs::new()
-        .and_then(|u| u.download_dir().map(|p| p.to_path_buf()))
-        .unwrap_or_else(data_dir::data_dir)
-}
-
-/// Open the OS file manager with the given file highlighted/selected.
-/// Best-effort: fires the platform-specific command and swallows errors.
-fn reveal_in_file_manager(p: &std::path::Path) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg("-R").arg(p).spawn();
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let arg = format!("/select,\"{}\"", p.display());
-        let _ = std::process::Command::new("explorer").arg(arg).spawn();
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        // No universal "select this file" primitive on Linux; just open
-        // the containing folder.
-        if let Some(parent) = p.parent() {
-            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
-        }
-    }
-}
-
-fn open_local_resource(relative_path: &str) {
-    if let Some(path) = resolve_local_resource(relative_path) {
-        if path.is_dir() {
-            open_directory(&path);
-        } else {
-            reveal_in_file_manager(&path);
-        }
-    }
-}
-
-fn resolve_local_resource(relative_path: &str) -> Option<PathBuf> {
-    let rel = PathBuf::from(relative_path);
-    if rel.is_absolute() && rel.exists() {
-        return Some(rel);
-    }
-
-    let mut roots = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        roots.push(cwd);
-    }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            roots.push(dir.to_path_buf());
-            if let Some(parent) = dir.parent() {
-                roots.push(parent.to_path_buf());
-                if let Some(grandparent) = parent.parent() {
-                    roots.push(grandparent.to_path_buf());
-                }
-            }
-        }
-    }
-
-    roots
-        .into_iter()
-        .map(|root| root.join(&rel))
-        .find(|candidate| candidate.exists())
-}
-
-fn open_directory(p: &std::path::Path) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg(p).spawn();
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("explorer").arg(p).spawn();
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(p).spawn();
-    }
 }
 
 fn push_log(shared: &Shared, msg: &str) {

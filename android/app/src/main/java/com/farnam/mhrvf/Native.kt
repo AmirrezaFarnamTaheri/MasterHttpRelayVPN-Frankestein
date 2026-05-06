@@ -80,6 +80,16 @@ object Native {
     external fun checkUpdate(): String
 
     /**
+     * Run structured Doctor diagnostics against the supplied full config.json
+     * payload. Returns the shared Doctor JSON contract:
+     * `{"ok":Boolean,"items":[{"id","level","title","detail","fix"}]}`.
+     *
+     * BLOCKS (may perform relay/SNI/CA probes); call from a background
+     * dispatcher.
+     */
+    external fun doctorJson(configJson: String): String
+
+    /**
      * Live traffic/usage counters for a running proxy handle. Returns a
      * JSON blob with the StatsSnapshot fields, or an empty string when the
      * handle is unknown or the active mode has no Apps Script fronter.

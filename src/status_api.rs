@@ -8,6 +8,34 @@ pub enum StatusApiError {
     Io(#[from] std::io::Error),
 }
 
+pub fn stats_snapshot_json_value(s: StatsSnapshot) -> serde_json::Value {
+    let degrade_reason = std::str::from_utf8(&s.degrade_reason)
+        .unwrap_or("")
+        .trim_matches(char::from(0))
+        .trim();
+    serde_json::json!({
+        "relay_calls": s.relay_calls,
+        "relay_failures": s.relay_failures,
+        "cache_hits": s.cache_hits,
+        "cache_misses": s.cache_misses,
+        "cache_bytes": s.cache_bytes,
+        "bytes_relayed": s.bytes_relayed,
+        "coalesced": s.coalesced,
+        "scripts_total": s.total_scripts,
+        "scripts_blacklisted": s.blacklisted_scripts,
+        // Android historically consumed these names. Keep them as aliases so
+        // all status consumers can use one renderer without a compatibility
+        // fork in JNI.
+        "total_scripts": s.total_scripts,
+        "blacklisted_scripts": s.blacklisted_scripts,
+        "today_calls": s.today_calls,
+        "today_bytes": s.today_bytes,
+        "today_reset_secs": s.today_reset_secs,
+        "degrade_level": s.degrade_level,
+        "degrade_reason": degrade_reason,
+    })
+}
+
 pub fn render_status_json(
     mode: &str,
     http_listen: (&str, u16),
@@ -16,27 +44,7 @@ pub fn render_status_json(
 ) -> String {
     let (hh, hp) = http_listen;
     let socks5 = socks_listen.map(|(sh, sp)| format!("{sh}:{sp}"));
-    let stats_json = stats.map(|s| {
-        serde_json::json!({
-            "relay_calls": s.relay_calls,
-            "relay_failures": s.relay_failures,
-            "cache_hits": s.cache_hits,
-            "cache_misses": s.cache_misses,
-            "cache_bytes": s.cache_bytes,
-            "bytes_relayed": s.bytes_relayed,
-            "coalesced": s.coalesced,
-            "scripts_total": s.total_scripts,
-            "scripts_blacklisted": s.blacklisted_scripts,
-            "today_calls": s.today_calls,
-            "today_bytes": s.today_bytes,
-            "today_reset_secs": s.today_reset_secs,
-            "degrade_level": s.degrade_level,
-            "degrade_reason": std::str::from_utf8(&s.degrade_reason)
-                .unwrap_or("")
-                .trim_matches(char::from(0))
-                .trim(),
-        })
-    });
+    let stats_json = stats.map(stats_snapshot_json_value);
     serde_json::json!({
         "ok": true,
         "mode": mode,
@@ -121,5 +129,60 @@ pub async fn serve_status_api(
             let _ = sock.write_all(resp.as_bytes()).await;
             let _ = sock.flush().await;
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_stats() -> StatsSnapshot {
+        let mut reason = [0u8; 32];
+        reason[..7].copy_from_slice(b"warming");
+        StatsSnapshot {
+            relay_calls: 10,
+            relay_failures: 2,
+            coalesced: 3,
+            bytes_relayed: 4096,
+            cache_hits: 4,
+            cache_misses: 6,
+            cache_bytes: 1024,
+            blacklisted_scripts: 1,
+            total_scripts: 5,
+            today_calls: 7,
+            today_bytes: 2048,
+            today_reset_secs: 3600,
+            degrade_level: 1,
+            degrade_reason: reason,
+        }
+    }
+
+    #[test]
+    fn stats_snapshot_json_keeps_canonical_and_android_alias_keys() {
+        let v = stats_snapshot_json_value(sample_stats());
+        assert_eq!(v["relay_calls"], 10);
+        assert_eq!(v["scripts_total"], 5);
+        assert_eq!(v["scripts_blacklisted"], 1);
+        assert_eq!(v["total_scripts"], 5);
+        assert_eq!(v["blacklisted_scripts"], 1);
+        assert_eq!(v["today_calls"], 7);
+        assert_eq!(v["degrade_reason"], "warming");
+    }
+
+    #[test]
+    fn render_status_json_uses_shared_stats_renderer() {
+        let text = render_status_json(
+            "apps_script",
+            ("127.0.0.1", 8085),
+            Some(("127.0.0.1", 8086)),
+            Some(sample_stats()),
+        );
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["mode"], "apps_script");
+        assert_eq!(v["http"], "127.0.0.1:8085");
+        assert_eq!(v["socks5"], "127.0.0.1:8086");
+        assert_eq!(v["stats"]["scripts_total"], 5);
+        assert_eq!(v["stats"]["total_scripts"], 5);
     }
 }

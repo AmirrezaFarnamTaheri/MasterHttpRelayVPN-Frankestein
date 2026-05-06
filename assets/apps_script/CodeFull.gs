@@ -114,6 +114,8 @@ const SKIP_HEADERS = {
   "x-forwarded-proto": 1,
   "x-forwarded-port": 1,
   "x-forwarded-server": 1,
+  "x-forwarded-ssl": 1,
+  "x-original-forwarded-for": 1,
   "x-real-ip": 1,
   "x-client-ip": 1,
   "client-ip": 1,

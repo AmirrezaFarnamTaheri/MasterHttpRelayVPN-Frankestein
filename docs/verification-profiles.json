@@ -1,0 +1,149 @@
+{
+  "schema": "mhrv-f-verification-profiles/v1",
+  "profiles": [
+    {
+      "id": "docs_governance",
+      "title": "Docs / Governance Only",
+      "use_when": "Markdown, roadmap, changelog, ADR, contributor, security, ownership, or release-process docs change without runtime behavior.",
+      "commands": [
+        "python tools/check-doc-links.py",
+        "python tools/check-doc-anchors.py",
+        "python tools/check-changelog-headings.py",
+        "python tools/generate-changelog-index.py -Check",
+        "python tools/check-release-governance.py",
+        "python tools/check-repo-governance.py",
+        "python tools/check-adr-governance.py",
+        "python tools/check-verification-profiles.py",
+        "python tools/check-repo-cleanliness.py"
+      ],
+      "notes": [
+        "Regenerate docs/changelog/index.md after adding a changelog file.",
+        "Run broader repo-sanity when docs also touch generated contracts, examples, or source references."
+      ]
+    },
+    {
+      "id": "config_schema",
+      "title": "Config / Schema / Examples",
+      "use_when": "Config fields, config registry, Desktop ConfigWire, Android ConfigStore, examples, platform defaults, or parity matrix change.",
+      "commands": [
+        "python tools/generate-config-registry.py -Check",
+        "python tools/check-config-registry-nested-fields.py",
+        "python tools/check-config-registry-map-semantics.py",
+        "python tools/check-config-wire-vs-registry.py",
+        "python tools/check-android-config-keys.py",
+        "python tools/check-android-owned-keys-list.py",
+        "python tools/check-mode-example-fixtures.py",
+        "python tools/check-platform-defaults.py",
+        "python tools/generate-platform-defaults-doc.py -Check",
+        "python tools/check-android-platform-defaults-test-static.py",
+        "python tools/generate-parity-matrix.py -Check",
+        "python tools/check-parity-matrix.py",
+        "cargo test bundled_example_configs_load_and_validate"
+      ],
+      "notes": [
+        "If readiness rules or repair targets changed, also run the readiness contract profile.",
+        "Android JVM tests remain CI/pre-provisioned; local profile uses static Android guards."
+      ]
+    },
+    {
+      "id": "android_ui",
+      "title": "Android UI / Mobile Bridge",
+      "use_when": "Android Compose UI, Android config import/export, JNI bridge, VPN lifecycle, support snapshot, localization, or mobile diagnostics change.",
+      "commands": [
+        "python tools/check-android-string-resource-parity.py",
+        "python tools/generate-android-hardcoded-copy-inventory.py -Check",
+        "python tools/check-android-config-sharing.py",
+        "python tools/check-android-vpn-lifecycle.py",
+        "python tools/check-android-support-redaction.py",
+        "python tools/check-android-support-snapshot-schema.py",
+        "python tools/check-android-doctor-jni-bridge.py",
+        "python tools/check-android-doctor-summary-ui.py",
+        "python tools/check-platform-defaults.py",
+        "python tools/check-android-platform-defaults-test-static.py"
+      ],
+      "notes": [
+        "Do not run Gradle locally unless intentionally working in a provisioned Android environment.",
+        "CI owns Android JVM execution; local guards prevent common drift without creating Gradle caches."
+      ]
+    },
+    {
+      "id": "backend_helpers",
+      "title": "Backend Helpers / Relay Scripts",
+      "use_when": "Apps Script helpers, Cloudflare Worker bridge, Vercel/Netlify relay docs, compatibility markers, or backend registry docs change.",
+      "commands": [
+        "python tools/check-apps-script-hardening.py",
+        "python tools/check-cloudflare-worker-relay.py",
+        "python tools/check-mode-vocabulary.py",
+        "python tools/check-mode-example-fixtures.py",
+        "python tools/check-doc-links.py",
+        "python tools/check-doc-anchors.py",
+        "node assets/apps_script/tests/batch_fallback_test.js",
+        "node assets/apps_script/tests/compat_marker_test.js",
+        "node assets/apps_script/tests/edge_dns_test.js"
+      ],
+      "notes": [
+        "Syntax-check Apps Script helpers through repo-sanity when Node is available.",
+        "Backend docs must keep Apps Script, Serverless JSON, XHTTP, direct fronting, and full tunnel distinct."
+      ]
+    },
+    {
+      "id": "desktop_runtime",
+      "title": "Desktop / Rust Runtime",
+      "use_when": "Rust runtime, Desktop UI, Doctor/status contracts, readiness, LAN sharing, mode behavior, or support bundle behavior changes.",
+      "commands": [
+        "cargo fmt --check",
+        "cargo clippy --all-targets --all-features -- -D warnings",
+        "cargo test --all-targets --features ui",
+        "python tools/check-status-stats-json-contract.py",
+        "python tools/check-doctor-json-contract.py",
+        "python tools/check-desktop-doctor-summary.py",
+        "python tools/check-desktop-test-relay-mode-guard.py",
+        "python tools/check-readiness-ui-contract.py",
+        "python tools/check-lan-sharing-ui.py"
+      ],
+      "notes": [
+        "Use powershell fallback for readiness generation if pwsh is not installed.",
+        "For UI behavior changes, check Desktop/Android/docs vocabulary together."
+      ]
+    },
+    {
+      "id": "full_tunnel",
+      "title": "Full Tunnel / tunnel-node",
+      "use_when": "Full mode, tunnel-node, UDP/udpgw, batching/coalescing, tunnel drain behavior, or CodeFull/tunnel-node docs change.",
+      "commands": [
+        "python tools/check-coalesce-tuning.py",
+        "python tools/check-tunnel-node-drain-concurrency.py",
+        "python tools/check-desktop-test-relay-mode-guard.py",
+        "cargo fmt --check",
+        "cargo test --all-targets --features ui",
+        "cd tunnel-node; cargo fmt --check",
+        "cd tunnel-node; cargo clippy --all-targets -- -D warnings",
+        "cd tunnel-node; cargo test --all-targets"
+      ],
+      "notes": [
+        "Mixed TCP/UDP and EOF-tail behavior are concurrency-sensitive; run tunnel-node tests for implementation changes.",
+        "Full-mode user verification is end-to-end through the proxy and tunnel-node, not the Desktop Test Relay button."
+      ]
+    },
+    {
+      "id": "release_ready",
+      "title": "Release Ready",
+      "use_when": "Before tagging or publishing a public release, or after broad cross-platform changes.",
+      "commands": [
+        "python tools/run-repo-sanity.py",
+        "cargo fmt --check",
+        "cargo clippy --all-targets --all-features -- -D warnings",
+        "cargo test --all-targets --features ui",
+        "cd tunnel-node; cargo fmt --check",
+        "cd tunnel-node; cargo clippy --all-targets -- -D warnings",
+        "cd tunnel-node; cargo test --all-targets",
+        "python tools/check-ci-local-sanity-parity.py",
+        "python tools/check-repo-cleanliness.py"
+      ],
+      "notes": [
+        "CI remains authoritative for official artifacts and Android JVM tests.",
+        "If local Node or PowerShell is unavailable, use documented repo-sanity skip flags only for local triage, not release signoff."
+      ]
+    }
+  ]
+}

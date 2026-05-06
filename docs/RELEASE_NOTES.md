@@ -1,5 +1,9 @@
 # Release Notes
 
+Rolling user-facing notes for changes not yet organized into a tagged
+`docs/changelog/v<version>.md` release note. See [`../CHANGELOG.md`](../CHANGELOG.md)
+for the release-notes source-of-truth hierarchy.
+
 - `direct` is the public no-relay SNI-rewrite mode name across UI, Android,
   docs, and examples. Legacy `google_only` configs still load.
 - `fronting_groups` adds SNI rewrite for Vercel, Fastly, and

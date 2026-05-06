@@ -93,6 +93,8 @@ Watch for:
 
 ## Direct Mode
 
+User-facing UI label: **Direct fronting**.
+
 Use this when the first blocker is reaching setup pages, or when you only need
 targets that work through a known SNI-fronted edge.
 
@@ -258,7 +260,7 @@ Doctor/Test again.
 
 The desktop **Test Relay** action is an Apps Script / serverless JSON probe. It
 does not run in `full` mode because a direct relay probe would not prove the
-actual data plane through `CodeFull.gs` and `tunnel-node`, and it does not run in
+actual data plane through `CodeFull.gs` and `tunnel-node`. It does not run in
 `direct` mode because there is no relay backend to test. For `full`, start the
 proxy and load an IP-check page such as `https://whatismyipaddress.com` through
 the local proxy; the displayed IP should be the tunnel-node/VPS egress. For

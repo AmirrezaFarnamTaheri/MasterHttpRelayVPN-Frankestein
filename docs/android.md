@@ -365,6 +365,12 @@ routing, trust, deployment-count, and preservation state while omitting
 `auth_key`, serverless `AUTH_KEY`, LAN token, upstream SOCKS5, raw unknown JSON,
 and unmasked deployment IDs. Desktop/CLI support bundles remain the fuller
 diagnostic path, but this mobile snapshot is safer than sharing raw config.
+If you have run the in-app Doctor for the current config, the copied snapshot
+also includes a privacy-safe Doctor summary: whether a result is available,
+overall ok/fail state, item counts, and the warning/failing item IDs. It does
+not copy Doctor titles, details, fixes, endpoint URLs, or raw JSON.
+The current copied-text schema is documented in
+[`docs/android-support-snapshot.md`](android-support-snapshot.md).
 The snapshot and deployment-ID masking policy are owned by
 `android/app/src/main/java/com/farnam/mhrvf/SupportRedaction.kt`, with JVM
 contract coverage in `SupportRedactionTest.kt`; the Compose screen only calls

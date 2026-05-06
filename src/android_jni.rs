@@ -3,8 +3,9 @@
 //! The app (Kotlin) calls `Native.setDataDir()` once, then `Native.startProxy()`
 //! with the full config.json payload and gets back a handle (u64). Later the
 //! app calls `stopProxy(handle)` to stop, `statsJson(handle)` to poll,
-//! `drainLogs()` to poll logs, or `exportCa(dest)` to copy the MITM CA cert
-//! to a path the app can hand to Android's system "install certificate" dialog.
+//! `doctorJson(configJson)` to run structured diagnostics, `drainLogs()` to
+//! poll logs, or `exportCa(dest)` to copy the MITM CA cert to a path the app
+//! can hand to Android's system "install certificate" dialog.
 //!
 //! The proxy runs on an internal tokio runtime that we own (1 worker thread
 //! minimum) — we don't piggyback on the JVM thread that calls in.
@@ -454,6 +455,58 @@ fn update_check_to_json(u: &crate::update_check::UpdateCheck) -> String {
     }
 }
 
+/// `Native.doctorJson(String configJson)` -> String. Runs the same structured
+/// Doctor diagnostics as CLI/Desktop and returns the shared Doctor JSON
+/// contract. Blocking — Kotlin should call from a background dispatcher.
+#[no_mangle]
+pub extern "system" fn Java_com_farnam_mhrvf_Native_doctorJson<'a>(
+    mut env: JNIEnv<'a>,
+    _class: JClass,
+    config_json: JString,
+) -> jstring {
+    let result_json = safe(
+        r#"{"ok":false,"items":[{"id":"panic","level":"fail","title":"Doctor failed","detail":"panic","fix":null}]}"#.to_string(),
+        AssertUnwindSafe(|| {
+            install_logging_once();
+            let json = jstring_to_string(&mut env, &config_json);
+            let config = match Config::from_json_str(&json) {
+                Ok(c) => c,
+                Err(e) => {
+                    return serde_json::json!({
+                        "ok": false,
+                        "items": [{
+                            "id": "config_json",
+                            "level": "fail",
+                            "title": "Android config",
+                            "detail": format!("invalid config json: {}", e),
+                            "fix": "Save the Android config again, then rerun Doctor.",
+                        }],
+                    })
+                    .to_string();
+                }
+            };
+            let Some(rt) = one_shot_runtime() else {
+                return serde_json::json!({
+                    "ok": false,
+                    "items": [{
+                        "id": "tokio_runtime",
+                        "level": "fail",
+                        "title": "Android Doctor runtime",
+                        "detail": "tokio init failed",
+                        "fix": "Restart the app and rerun Doctor.",
+                    }],
+                })
+                .to_string();
+            };
+            let report = rt.block_on(crate::doctor::run(&config));
+            crate::doctor::doctor_report_json_value(&report).to_string()
+        }),
+    );
+    env.new_string(result_json)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
 /// `Native.testSni(googleIp, sni)` -> String. Returns a small JSON blob
 /// like `{"ok":true,"latencyMs":123}` or `{"ok":false,"error":"..."}`.
 /// Blocking call — Kotlin side should invoke on a background coroutine.
@@ -523,30 +576,7 @@ pub extern "system" fn Java_com_farnam_mhrvf_Native_statsJson<'a>(
             let Some(fronter) = running.fronter.as_ref() else {
                 return String::new();
             };
-            let s = fronter.snapshot_stats();
-            let degrade_reason = std::str::from_utf8(&s.degrade_reason)
-                .unwrap_or("")
-                .trim_matches(char::from(0))
-                .trim();
-            serde_json::json!({
-                "relay_calls": s.relay_calls,
-                "relay_failures": s.relay_failures,
-                "coalesced": s.coalesced,
-                "bytes_relayed": s.bytes_relayed,
-                "cache_hits": s.cache_hits,
-                "cache_misses": s.cache_misses,
-                "cache_bytes": s.cache_bytes,
-                "blacklisted_scripts": s.blacklisted_scripts,
-                "total_scripts": s.total_scripts,
-                "scripts_blacklisted": s.blacklisted_scripts,
-                "scripts_total": s.total_scripts,
-                "today_calls": s.today_calls,
-                "today_bytes": s.today_bytes,
-                "today_reset_secs": s.today_reset_secs,
-                "degrade_level": s.degrade_level,
-                "degrade_reason": degrade_reason,
-            })
-            .to_string()
+            crate::status_api::stats_snapshot_json_value(fronter.snapshot_stats()).to_string()
         }),
     );
     env.new_string(out)

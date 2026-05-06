@@ -1,3 +1,5 @@
+# Batch 5 - Android Support Redaction Gate - 2026-05-04
+
 <!-- Batch changelog: Persian first, then English. -->
 • gate استاتیک **Android support redaction owner** اضافه شد:
   - `tools/check-android-support-redaction.py` وجود `SupportRedaction.kt`، استفادهٔ Compose از `androidSupportSnapshot(...)`، و پوشش source تست `SupportRedactionTest.kt` را بررسی می‌کند.

@@ -39,6 +39,10 @@ discipline.
 - Android guide: [`docs/android.md`](android.md)
 - Android unknown-root preservation (`ownedKeys`, drift gates): [`docs/android-config-preservation.md`](android-config-preservation.md)
 - Persian Android guide: [`docs/android.fa.md`](android.fa.md)
+- Android hard-coded copy inventory:
+  [`docs/android-hardcoded-copy-inventory.md`](android-hardcoded-copy-inventory.md)
+- Android redacted support snapshot schema:
+  [`docs/android-support-snapshot.md`](android-support-snapshot.md)
 - Release APK signing policy (committed keystore, CI authority):
   [`docs/android-signing.md`](android-signing.md)
 - Per-app routing and LAN sharing:
@@ -121,7 +125,11 @@ Use the full guide before enabling LAN exposure:
 ## Troubleshooting And Reference
 
 - Guided diagnostics: [`docs/doctor.md`](doctor.md)
+- Shared Doctor JSON contract:
+  [`docs/doctor-json-contract.md`](doctor-json-contract.md)
 - Trust Center CLI/UI/bundle snapshot: [`docs/trust-center.md`](trust-center.md)
+- Shared live status/stats JSON contract:
+  [`docs/status-stats-json-contract.md`](status-stats-json-contract.md)
 - Shared readiness IDs and repair targets: [`docs/readiness-matrix.md`](readiness-matrix.md)
 - Canonical config registry (field metadata): [`docs/config-registry.md`](config-registry.md)
 - Config parity matrix (field × surface): [`docs/config-parity-matrix.md`](config-parity-matrix.md)
@@ -138,13 +146,27 @@ Use the full guide before enabling LAN exposure:
 - Maintainer drift tools (Python generators and CI parity gates):
   [`tools/README.md`](../tools/README.md) — one-command mirror of CI:
   `python tools/run-repo-sanity.py`
+- Verification profiles by change type:
+  [`docs/verification-profiles.md`](verification-profiles.md)
+- Change-impact checklist by touched surface:
+  [`docs/change-impact-checklist.md`](change-impact-checklist.md)
+- Tooling source map for guarded/generated docs:
+  [`docs/tooling-source-map.md`](tooling-source-map.md)
 - Local workspace cleanup (build caches and regenerable dirs):
   [`docs/workspace-cleanup.md`](workspace-cleanup.md)
 - Donor reference trees — absorption matrix (what to port vs quarantine):
   [`docs/donor-absorption-matrix.md`](donor-absorption-matrix.md)
 - Official YouTube apps vs browser / external Cronet patch research (docs-only):
   [`docs/youtube-external-patching.md`](youtube-external-patching.md)
-- Maintainer batch / audit changelogs: [`docs/changelog/`](changelog/)
+- Maintainer batch / audit changelogs:
+  [`docs/changelog/index.md`](changelog/index.md)
+- Release/changelog hub: [`CHANGELOG.md`](../CHANGELOG.md)
+- Contributing guide: [`CONTRIBUTING.md`](../CONTRIBUTING.md)
+- Security policy: [`SECURITY.md`](../SECURITY.md)
+- Ownership notes: [`docs/ownership.md`](ownership.md)
+- Architecture decision records: [`docs/adr/README.md`](adr/README.md)
+- Versioning policy: [`docs/versioning-policy.md`](versioning-policy.md)
+- Rollback policy: [`docs/rollback-policy.md`](rollback-policy.md)
 
 ## Offline Or Blocked GitHub Releases
 

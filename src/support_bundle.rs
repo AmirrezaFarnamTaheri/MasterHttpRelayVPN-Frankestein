@@ -230,23 +230,9 @@ pub async fn export_support_bundle(cfg: &Config) -> Result<PathBuf, SupportBundl
 
     // 4) Doctor report
     let report = doctor::run(cfg).await;
-    // Serialize doctor report in a simple JSON shape.
-    let items: Vec<serde_json::Value> = report
-        .items
-        .iter()
-        .map(|it| {
-            serde_json::json!({
-                "id": it.id,
-                "level": match it.level { doctor::DoctorLevel::Ok => "ok", doctor::DoctorLevel::Warn => "warn", doctor::DoctorLevel::Fail => "fail" },
-                "title": it.title,
-                "detail": it.detail,
-                "fix": it.fix,
-            })
-        })
-        .collect();
     write_json(
         &out_dir.join("doctor.json"),
-        &serde_json::json!({ "ok": report.ok(), "items": items }),
+        &doctor::doctor_report_json_value(&report),
     )?;
 
     // 5) Status JSON (best-effort; uses same renderer as local status API)

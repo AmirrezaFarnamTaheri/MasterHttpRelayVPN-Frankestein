@@ -1,3 +1,5 @@
+# Batch 6 - Android Config Sharing Gate - 2026-05-04
+
 <!-- Batch changelog: Persian first, then English. -->
 • مسیر QR/deep-link اندروید محکم‌تر شد:
   - `ConfigStore.encode()` حالا export را از `preservedUnknownRootJson` شروع می‌کند و بعد keyهای owned اندروید را overwrite می‌کند؛ بنابراین root keyهای advanced که از Desktop یا config دستی آمده‌اند در QR/share از بین نمی‌روند.

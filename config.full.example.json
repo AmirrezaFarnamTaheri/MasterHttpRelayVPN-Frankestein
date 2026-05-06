@@ -27,7 +27,7 @@
   "runtime_profile": "balanced",
   "range_parallelism": 12,
   "range_chunk_bytes": 262144,
-  "coalesce_step_ms": 40,
+  "coalesce_step_ms": 10,
   "coalesce_max_ms": 1000,
   "block_quic": false,
   "tunnel_doh": true,

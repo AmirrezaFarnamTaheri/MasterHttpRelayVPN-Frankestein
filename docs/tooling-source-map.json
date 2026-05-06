@@ -1,0 +1,245 @@
+{
+  "schema": "mhrv-f-tooling-source-map/v1",
+  "documents": [
+    {
+      "path": "docs/config-registry.md",
+      "source": "docs/config-registry.json",
+      "generated_by": "tools/generate-config-registry.py",
+      "guarded_by": [
+        "tools/generate-config-registry.py",
+        "tools/check-config-registry-nested-fields.py",
+        "tools/check-config-registry-map-semantics.py"
+      ],
+      "purpose": "Canonical config field metadata and generated field reference."
+    },
+    {
+      "path": "docs/config-parity-matrix.md",
+      "source": "docs/config-registry.json",
+      "generated_by": "tools/generate-config-registry.py",
+      "guarded_by": [
+        "tools/generate-config-registry.py",
+        "tools/check-config-wire-vs-registry.py",
+        "tools/check-android-config-keys.py",
+        "tools/check-android-owned-keys-list.py"
+      ],
+      "purpose": "Config field coverage across Rust, Desktop, Android, docs, and examples."
+    },
+    {
+      "path": "docs/parity-matrix.md",
+      "source": "docs/parity-matrix.json",
+      "generated_by": "tools/generate-parity-matrix.py",
+      "guarded_by": [
+        "tools/generate-parity-matrix.py",
+        "tools/check-parity-matrix.py"
+      ],
+      "purpose": "Mode/backend support matrix and example/doc references."
+    },
+    {
+      "path": "docs/platform-defaults.md",
+      "source": "docs/platform-defaults.json",
+      "generated_by": "tools/generate-platform-defaults-doc.py",
+      "guarded_by": [
+        "tools/check-platform-defaults.py",
+        "tools/generate-platform-defaults-doc.py",
+        "tools/check-android-platform-defaults-test-static.py"
+      ],
+      "purpose": "Intentional Rust/Desktop and Android default differences."
+    },
+    {
+      "path": "docs/readiness-matrix.md",
+      "source": "src/readiness.rs",
+      "generated_by": "tools/generate-readiness-contract.ps1",
+      "guarded_by": [
+        "tools/generate-readiness-contract.ps1",
+        "tools/check-readiness-ui-contract.py"
+      ],
+      "purpose": "Stable readiness IDs, repair targets, generated Android IDs, and docs anchors."
+    },
+    {
+      "path": "docs/android-hardcoded-copy-inventory.md",
+      "source": "android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt",
+      "generated_by": "tools/generate-android-hardcoded-copy-inventory.py",
+      "guarded_by": [
+        "tools/generate-android-hardcoded-copy-inventory.py",
+        "tools/check-android-string-resource-parity.py"
+      ],
+      "purpose": "Inventory of Android visible literals that must not drift from localization policy."
+    },
+    {
+      "path": "docs/changelog/index.md",
+      "source": "docs/changelog/*.md",
+      "generated_by": "tools/generate-changelog-index.py",
+      "guarded_by": [
+        "tools/check-changelog-headings.py",
+        "tools/generate-changelog-index.py"
+      ],
+      "purpose": "Generated index of maintainer batch and release changelog entries."
+    },
+    {
+      "path": "docs/status-stats-json-contract.md",
+      "source": "src/status_api.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-status-stats-json-contract.py"
+      ],
+      "purpose": "Shared live stats JSON contract for local status, support bundles, and Android JNI."
+    },
+    {
+      "path": "docs/doctor-json-contract.md",
+      "source": "src/doctor.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-doctor-json-contract.py",
+        "tools/check-android-doctor-jni-bridge.py",
+        "tools/check-desktop-doctor-summary.py"
+      ],
+      "purpose": "Shared Doctor report JSON contract and UI projection rules."
+    },
+    {
+      "path": "docs/android-support-snapshot.md",
+      "source": "android/app/src/main/java/com/farnam/mhrvf/SupportRedaction.kt",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-android-support-redaction.py",
+        "tools/check-android-support-snapshot-schema.py"
+      ],
+      "purpose": "Android copied support snapshot schema and redaction boundary."
+    },
+    {
+      "path": "docs/verification-profiles.md",
+      "source": "docs/verification-profiles.json",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-verification-profiles.py"
+      ],
+      "purpose": "Verification command profiles by change type."
+    },
+    {
+      "path": "docs/change-impact-checklist.md",
+      "source": "docs/change-impact-checklist.json",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-change-impact-checklist.py"
+      ],
+      "purpose": "Touched-surface impact checklist mapped to verification profiles."
+    },
+    {
+      "path": "docs/adr/README.md",
+      "source": "docs/adr/*.md",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-adr-governance.py"
+      ],
+      "purpose": "Architecture decision record index and required ADR structure."
+    },
+    {
+      "path": "docs/release-checklist.md",
+      "source": "CHANGELOG.md",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-release-governance.py",
+        "tools/check-ci-local-sanity-parity.py"
+      ],
+      "purpose": "Human release-prep checklist and release authority notes."
+    },
+    {
+      "path": "docs/ownership.md",
+      "source": "CONTRIBUTING.md",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-repo-governance.py"
+      ],
+      "purpose": "Lightweight area ownership notes while CODEOWNERS remains deferred."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_format.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for extracted formatting helpers."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_fs.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for extracted file/resource helpers."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_xhttp.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for extracted XHTTP form/default/link-generation helpers, cloud deploy polling, and renderer."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_style.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for extracted style tokens, theme setup, help text, section, button, and form-row helpers."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_trust.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for the extracted Trust tab wrapper, Trust Center snapshot, and support-bundle preview renderers."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_doctor.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for extracted Doctor summary renderer and level-label helper."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_help.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for extracted Help walkthrough, backend-tool catalog, and row renderer."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_mode.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for extracted mode summary, mode dashboard, readiness repair routing, and dashboard chip helpers."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_monitor.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for extracted Monitor traffic rows, quota-rate math, degradation timeline reduction, and notable-log filtering."
+    },
+    {
+      "path": "src/bin/ui.rs",
+      "source": "src/bin/ui_setup.rs",
+      "generated_by": null,
+      "guarded_by": [
+        "tools/check-desktop-ui-modularization.py"
+      ],
+      "purpose": "Desktop UI monolith boundary for the extracted first-run Setup wizard renderer."
+    }
+  ]
+}

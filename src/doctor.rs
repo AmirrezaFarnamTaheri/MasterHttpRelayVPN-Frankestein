@@ -55,6 +55,32 @@ impl DoctorReport {
     }
 }
 
+pub fn doctor_level_str(level: &DoctorLevel) -> &'static str {
+    match level {
+        DoctorLevel::Ok => "ok",
+        DoctorLevel::Warn => "warn",
+        DoctorLevel::Fail => "fail",
+    }
+}
+
+pub fn doctor_item_json_value(item: &DoctorItem) -> serde_json::Value {
+    serde_json::json!({
+        "id": item.id,
+        "level": doctor_level_str(&item.level),
+        "title": item.title,
+        "detail": item.detail,
+        "fix": item.fix,
+    })
+}
+
+pub fn doctor_report_json_value(report: &DoctorReport) -> serde_json::Value {
+    let items: Vec<serde_json::Value> = report.items.iter().map(doctor_item_json_value).collect();
+    serde_json::json!({
+        "ok": report.ok(),
+        "items": items,
+    })
+}
+
 pub async fn run(config: &Config) -> DoctorReport {
     run_with_options(config, &DoctorOptions::default()).await
 }
@@ -792,5 +818,34 @@ mod tests {
             .expect("health item");
         assert!(matches!(health.level, DoctorLevel::Ok));
         assert!(health.detail.contains("full-tunnel capabilities"));
+    }
+
+    #[test]
+    fn doctor_report_json_renderer_keeps_support_bundle_shape() {
+        let report = DoctorReport {
+            items: vec![
+                DoctorItem {
+                    id: "ok_item",
+                    level: DoctorLevel::Ok,
+                    title: "OK item".into(),
+                    detail: "All good.".into(),
+                    fix: None,
+                },
+                DoctorItem {
+                    id: "warn_item",
+                    level: DoctorLevel::Warn,
+                    title: "Warn item".into(),
+                    detail: "Needs review.".into(),
+                    fix: Some("Review config.json.".into()),
+                },
+            ],
+        };
+        let json = doctor_report_json_value(&report);
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["items"][0]["id"], "ok_item");
+        assert_eq!(json["items"][0]["level"], "ok");
+        assert_eq!(json["items"][0]["fix"], serde_json::Value::Null);
+        assert_eq!(json["items"][1]["level"], "warn");
+        assert_eq!(json["items"][1]["fix"], "Review config.json.");
     }
 }

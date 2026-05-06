@@ -1,0 +1,61 @@
+{
+  "schema": "mhrv-f-change-impact-checklist/v1",
+  "surfaces": [
+    {
+      "id": "docs",
+      "title": "Docs / Roadmap / Changelog",
+      "paths": ["README.md", "docs/**/*.md", "elevation_audit_roadmap_source.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md"],
+      "profiles": ["docs_governance"],
+      "parity": ["docs index", "changelog index", "roadmap", "local links", "anchors"],
+      "cleanup": ["remove stale duplicate docs", "regenerate docs/changelog/index.md when changelog files change"]
+    },
+    {
+      "id": "config",
+      "title": "Config / Registry / Examples",
+      "paths": ["src/config.rs", "docs/config-registry.json", "config*.example.json", "android/**/ConfigStore.kt"],
+      "profiles": ["config_schema", "android_ui"],
+      "parity": ["Rust Config", "Desktop ConfigWire", "Android ConfigStore", "examples", "config registry", "parity matrix"],
+      "cleanup": ["remove deprecated field docs", "avoid new legacy aliases without ADR/test/docs"]
+    },
+    {
+      "id": "desktop",
+      "title": "Desktop UI / Rust Runtime",
+      "paths": ["src/bin/ui.rs", "src/**/*.rs"],
+      "profiles": ["desktop_runtime"],
+      "parity": ["Desktop UI", "CLI", "Doctor/status contracts", "docs", "support bundles"],
+      "cleanup": ["remove stale UI copy", "avoid duplicate status/readiness renderers"]
+    },
+    {
+      "id": "android",
+      "title": "Android UI / Mobile Bridge",
+      "paths": ["android/**", "src/android_jni.rs"],
+      "profiles": ["android_ui", "config_schema"],
+      "parity": ["Android strings EN/FA", "ConfigStore", "JNI bridge", "support snapshot", "Desktop import/export"],
+      "cleanup": ["remove hard-coded visible copy", "remove local duplicate redaction helpers"]
+    },
+    {
+      "id": "backend_helpers",
+      "title": "Backend Helpers / Relay Scripts",
+      "paths": ["assets/apps_script/**", "tools/*relay*", "docs/*relay*.md", "docs/backend-registry.md"],
+      "profiles": ["backend_helpers"],
+      "parity": ["helper kind/version/protocol markers", "backend registry", "mode docs", "examples", "release checklist"],
+      "cleanup": ["remove stale helper variants", "do not mix JSON relay and XHTTP docs"]
+    },
+    {
+      "id": "full_tunnel",
+      "title": "Full Tunnel / tunnel-node",
+      "paths": ["tunnel-node/**", "docs/udpgw.md", "assets/apps_script/CodeFull.gs", "config.full*.json"],
+      "profiles": ["full_tunnel", "backend_helpers"],
+      "parity": ["CodeFull.gs", "tunnel-node", "Desktop full-mode guidance", "Android full-mode config", "docs"],
+      "cleanup": ["remove stale batching/coalesce docs", "keep Test Relay disclaimers aligned"]
+    },
+    {
+      "id": "release_security",
+      "title": "Release / Security / Trust",
+      "paths": [".github/**", "docs/android-signing.md", "docs/release-checklist.md", "docs/safety-security.md", "docs/rollback-policy.md"],
+      "profiles": ["docs_governance", "release_ready"],
+      "parity": ["release workflow", "release checklist", "security policy", "signing docs", "rollback docs"],
+      "cleanup": ["remove duplicate release notification paths", "keep CI as artifact authority"]
+    }
+  ]
+}

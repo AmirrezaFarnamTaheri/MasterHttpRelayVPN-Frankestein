@@ -10,6 +10,156 @@ It is intentionally both a roadmap and a bookkeeping document. Use it to plan
 work, log decisions, track progress, prevent duplicated documentation, and keep
 the desktop UI, Android UI, CLI help, README, and docs aligned.
 
+## Batch 88 - Desktop UI Help Walkthrough Extraction - Completed 2026-05-07
+
+### Implemented
+
+- Moved the full Desktop Help walkthrough renderer into `src/bin/ui_help.rs`.
+- Preserved the existing Help content: first-time checklist, Trust Center
+  preview, backend registry link, mode goal cards, mode requirements,
+  split-brain setup warning, advanced tuning guidance, privacy/trust note,
+  Android companion note, and maintainer repository link.
+- Left `src/bin/ui.rs` as the Help tab caller while `src/bin/ui_help.rs` owns
+  both the walkthrough and backend-tool catalog rendering.
+
+### Parity And Split-Brain Controls
+
+- Desktop presentation is the only changed product surface; Android Help,
+  backend helpers, config schema, runtime behavior, examples, and docs targets
+  remain unchanged.
+- `tools/check-desktop-ui-modularization.py` now rejects inline
+  `help_walkthrough` in `src/bin/ui.rs` and requires the extracted Help module
+  to keep the Trust Center, backend registry, and advanced-reference links.
+- The tooling source map and tools README identify `src/bin/ui_help.rs` as the
+  Help walkthrough, backend-tool catalog, and row-renderer boundary.
+
+### Cleanup
+
+- Removed the inline Help walkthrough from `src/bin/ui.rs`.
+- Removed stale `mode_goal_card` use from `src/bin/ui.rs`; it is now local to
+  `src/bin/ui_help.rs`.
+- Kept the extraction scoped to rendering and copy ownership. No backend,
+  Android, config, or support-bundle behavior moved.
+
+### Verification
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_help`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-changelog-headings.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 87 - Desktop UI Help Backend Catalog Extraction - Completed 2026-05-07
+
+### Implemented
+
+- Added `src/bin/ui_help.rs` as the Desktop Help module for backend-tool catalog
+  data and row rendering.
+- Replaced repeated inline backend-tool rows in `src/bin/ui.rs` with one
+  `backend_tool_entries()` catalog rendered through `render_tool_help_row`.
+- Preserved the visible Help content for Apps Script, Cloudflare Worker,
+  Vercel/Netlify JSON, Vercel/Netlify XHTTP helpers, Field notes, and
+  tunnel-node.
+- Added tests that lock catalog order and require every backend-tool entry to
+  keep its local resource path.
+
+### Parity And Split-Brain Controls
+
+- Desktop Help remains the only changed surface; Android UI, backend helpers,
+  runtime behavior, config schema, docs links, and examples are unchanged.
+- `tools/check-desktop-ui-modularization.py` now requires `mod ui_help;`,
+  requires the imported catalog renderer, rejects the old inline
+  `tool_help_row`, and requires the new module tests.
+- `tools/check-cloudflare-worker-relay.py` now verifies the Cloudflare Worker
+  backend-tool row in `src/bin/ui_help.rs`, preserving the existing Worker
+  bridge guard after the catalog extraction.
+- `docs/tooling-source-map.json`, `docs/tooling-source-map.md`, and
+  `tools/README.md` now list `src/bin/ui_help.rs` under the Desktop UI
+  modularization boundary.
+
+### Cleanup
+
+- Removed the inline backend-tool row renderer from `src/bin/ui.rs`.
+- Removed the stale `open_local_resource` import from `src/bin/ui.rs` because
+  `src/bin/ui_help.rs` owns backend-tool resource opening.
+- Kept the longer Help walkthrough prose in `src/bin/ui.rs` for a later, more
+  deliberate extraction so this batch remains low-risk and verifiable.
+
+### Verification
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_help`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-changelog-headings.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 86 - Desktop UI Doctor Summary Extraction - Completed 2026-05-06
+
+### Implemented
+
+- Added `src/bin/ui_doctor.rs` as the Desktop-only home for typed Doctor summary
+  presentation.
+- Moved the Monitor Doctor summary card out of `src/bin/ui.rs` without changing
+  the visible behavior: empty state, health label, OK / warning / failure
+  counts, age text, non-OK item prioritization, fix display, and hidden-item
+  count are preserved.
+- Moved the Doctor level-label helper into the same module so background Doctor
+  logging and Monitor rendering continue sharing one label vocabulary.
+- Added focused unit tests for label stability, level counting, and status color
+  token mapping.
+
+### Parity And Split-Brain Controls
+
+- Desktop still consumes typed `DoctorReport` state directly; Android remains on
+  the shared JNI Doctor JSON contract, so this change is a presentation-boundary
+  extraction rather than a diagnostic contract change.
+- `tools/check-desktop-ui-modularization.py` now requires `mod ui_doctor;`,
+  requires the imported Doctor helpers, rejects the old inline Doctor summary
+  helpers in `src/bin/ui.rs`, and requires the new module tests.
+- `tools/check-desktop-doctor-summary.py` now follows the extracted renderer
+  boundary and verifies `src/bin/ui_doctor.rs` instead of requiring the Doctor
+  helpers to remain inline.
+- `docs/tooling-source-map.json`, `docs/tooling-source-map.md`, and
+  `tools/README.md` now list `src/bin/ui_doctor.rs` under the Desktop UI
+  modularization boundary.
+
+### Cleanup
+
+- Removed stale inline Doctor helpers from `src/bin/ui.rs`.
+- Kept the new module limited to Doctor summary rendering; no backend,
+  support-bundle, Android, or Doctor JSON code was copied into it.
+- Retained existing Doctor contract guards as the cross-platform source of
+  truth for the diagnostic payload shape.
+
+### Verification
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_doctor`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-changelog-headings.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+
 ## How To Use This Document
 
 Update this file whenever meaningful UI/UX/docs work starts, changes direction,
@@ -63,8 +213,8 @@ Observed during inspection:
 | Screenshot assets / references | No `docs/*.png` screenshot was found during this pass; docs and release surfaces still need stale-image and stale-name review | Visual docs can mislead users and contributors if old product identity or old UI images remain referenced. |
 | Docs breadth | Many English docs exist | Good coverage, but risk of overlap and unclear canonical entry points. |
 | Persian docs | Some are much shorter than English or missing entirely | Language toggle and Persian docs need parity strategy. |
-| Android strings | English and Persian each have 199 `strings.xml` keys (paired) | Hard-coded Kotlin copy and future keys can still drift; tooling should keep parity enforced. |
-| Android hard-coded copy | Several visible strings are in Kotlin | Localization and consistency are harder. |
+| Android strings | English and Persian each have 270 `strings.xml` keys (paired after Batch 60) | Hard-coded Kotlin copy and future keys can still drift; tooling now keeps key parity enforced. |
+| Android hard-coded copy | Batch 62 keeps the generated inventory at 3 Kotlin visible literals: 0 localization candidates and 3 dynamic/technical tokens; `-Check` now fails if any detected literal is classified as `localize` | Current inventory-defined localization migration is complete; future broader wording audits should expand the scanner deliberately when new UI builder shapes appear. |
 | Desktop docs vs implementation | Docs describe persistent top controls; current code places the full central panel in a scroll area | Expected interaction model and actual implementation may drift. |
 
 ## Project-Aware Deep Audit Findings
@@ -79,9 +229,9 @@ Inspected surfaces:
 | Rust config contract | `src/config.rs` | `Config` is the real backend schema and validator; canonical Apps Script identity is `account_groups` | Every frontend must serialize the same contract or provide an explicit migration path. |
 | Desktop UI | `src/bin/ui.rs` | ~5,553 lines; desktop uses `account_groups` and a custom `ConfigWire` serializer | Desktop is closer to canonical config but needs contract tests so future fields do not disappear on save. |
 | Android config bridge | `android/app/src/main/java/com/farnam/mhrvf/ConfigStore.kt` | Android still writes top-level `script_ids` and `auth_key` for Apps Script | High-priority parity gap: Rust now validates `account_groups` for `apps_script` and `full`. |
-| Android UI | `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt` | ~2,123 lines; several user-visible strings remain hard-coded | Localization and terminology parity are not enforceable yet. |
-| Android JNI bridge | `src/android_jni.rs` and `Native.kt` | JNI exposes `startProxy`, `stopProxy`, `statsJson`, `drainLogs`, `testSni`, `checkUpdate`, `exportCa` | Good bridge exists, but Doctor/support-bundle/status parity is incomplete. |
-| Runtime status | `src/status_api.rs`, `src/domain_fronter.rs`, `src/android_jni.rs` | Stats are rendered in multiple shapes; Android emits a subset plus aliases | Needs one status/stats DTO contract shared by CLI, desktop, Android, and support bundles. |
+| Android UI | `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt` | Large Compose surface; scanner-visible copy migration and readiness-card label/detail localization are complete, with builder-style scanner coverage expanded in Batch 61; Batch 69 adds a localized Doctor summary card backed by `Native.doctorJson` | Localization key parity is enforced, but UI modularization remains useful. |
+| Android JNI bridge | `src/android_jni.rs` and `Native.kt` | JNI exposes `startProxy`, `stopProxy`, `statsJson`, `doctorJson`, `drainLogs`, `testSni`, `checkUpdate`, `exportCa` | Good bridge exists; Batch 68 adds structured Doctor JSON output, but Android still needs a polished Doctor UI card. |
+| Runtime status | `src/status_api.rs`, `src/domain_fronter.rs`, `src/android_jni.rs`, `src/doctor.rs` | Batches 63-65 add one shared `StatsSnapshot` JSON renderer, Android raw/enveloped parser tolerance, and `docs/status-stats-json-contract.md` as the public stats contract; Batch 66 adds a shared Doctor JSON renderer and contract; Batch 67 maps typed Doctor reports into the Desktop Monitor summary; Batch 68 exposes the shared Doctor JSON contract to Android through JNI; Batch 69 renders that contract in Android UI with stale-result protection | Remaining work is richer combined status DTO coverage beyond live stats/Doctor items. |
 | CLI surface | `src/main.rs` | Commands include `test`, `doctor`, `doctor-fix`, `init-config`, `support-bundle`, `rollback-config`, `scan-ips`, `scan-sni`, `test-sni` | UI/docs should expose or explain all user-relevant commands with the same names and expectations. |
 | Documentation | `README.md`, `docs/*.md` | Broad coverage; JSON vs XHTTP distinction is mostly present; Persian docs vary in depth | Needs owner map, parity policy, stale-name scans, and release review gates. |
 | Backend helpers | `assets/apps_script/*`, `tools/*-json-relay`, `tools/*-xhttp-relay`, `tunnel-node` | Multiple backend shapes with similar provider names | Needs a single backend matrix so users do not mix native JSON, Apps Script, XHTTP, and full tunnel instructions. |
@@ -96,11 +246,11 @@ Inspected surfaces:
 | Serverless JSON credentials | `vercel` object in `src/config.rs` | Desktop Serverless JSON fields, Android serverless fields, docs | Mostly aligned, but label says Vercel while Netlify is also supported | Confusing provider mental model | Rename user-facing copy to "Serverless JSON"; keep `vercel` as compatibility schema name. |
 | Network defaults | Rust defaults and example configs | Desktop defaults, Android defaults, docs | Desktop uses `8085/8086`; Android intentionally uses `8080/1081`; Android Google IP default differs from Rust | Could look like a bug unless documented as platform-specific | Make platform default differences explicit and tested. |
 | SNI pool | `DEFAULT_GOOGLE_SNI_POOL` in `src/domain_fronter.rs` | Desktop SNI editor, Android `DEFAULT_SNI_POOL`, docs | Previously mirrored manually | Drift risk | **Mitigated:** `tools/check-sni-default-pool.py` + CI require identical ordered hostnames (Batch 1, 2026-05-03). |
-| Stats/status shape | `StatsSnapshot`, `status_api`, JNI `statsJson` | Desktop Monitor, Android usage card, support bundle, local `/status` | Similar data emitted in different JSON shapes | Dashboards and support bundles can disagree | Define one status schema and reuse it. |
+| Stats/status shape | `StatsSnapshot`, `status_api`, JNI `statsJson` | Desktop Monitor, Android usage card, support bundle, local `/status` | **Mitigated:** Batch 63 uses `status_api::stats_snapshot_json_value` for local `/status` and Android JNI, preserving canonical keys and Android aliases; Batch 64 makes Android parse either raw stats or `stats` envelope; Batch 65 documents and guards the raw/enveloped contract | Dashboards are less likely to disagree on live stats; broader status envelope parity remains | Extend the same contract pattern to richer Doctor/status DTOs later. |
 | Readiness rules | `Config::validate`, `unsafe_warnings`, Doctor | Desktop disabled Start, Android disabled Connect, docs | Desktop and Android compute readiness locally and differently | A config can look valid in one UI and fail in native runtime | Add shared readiness matrix and test fixtures. |
-| Diagnostics | `doctor.rs`, `test_cmd.rs`, `scan_*` | CLI, desktop logs, Android SNI tester, docs | Doctor is structured internally but UI mostly logs results; Android has SNI/update but no full Doctor summary | Troubleshooting remains log-driven | Add structured diagnostic summaries and UI mapping. |
+| Diagnostics | `doctor.rs`, `test_cmd.rs`, `scan_*` | CLI, desktop Monitor, Android Doctor summary/SNI tester, docs | **Mitigated for Doctor summaries:** Batch 66 makes Doctor JSON a shared renderer for support bundles; Batch 67 keeps the latest typed Doctor report in Desktop UI state and renders a Monitor summary card; Batch 68 adds Android `Native.doctorJson(configJson)` returning the same contract; Batch 69 adds the Android Doctor summary card | Remaining gap is broader Observatory-style event timelines and richer route diagnostics | Build later Observatory/Route Advisor views on these shared diagnostics instead of log-only surfaces. |
 | Safety warnings | `unsafe_warnings`, CA installer, LAN auth logic | Desktop Network/Help, Android CA dialog, docs | Warnings exist but are not governed as one vocabulary | Risk copy may drift or become less actionable | Add safety copy contract and review gate. |
-| Localization | Android resources, Persian docs | Android UI, README Persian, docs/*.fa.md | English and Persian `strings.xml` each have 199 keys (paired); some visible strings are still hard-coded in Kotlin | Persian experience can still drift where Kotlin bypasses resources | Add string parity tooling and hard-coded copy inventory. |
+| Localization | Android resources, Persian docs | Android UI, README Persian, docs/*.fa.md | English and Persian `strings.xml` each have 270 keys (paired after Batch 60); generated inventory has 0 localization candidates and 3 dynamic/technical tokens; Batch 62 makes zero-localize candidates a repo-sanity gate | Persian experience can still drift if future Kotlin copy bypasses resources or uses a new unscanned builder shape | Keep string parity tooling and the hard-coded copy inventory green; expand scanner coverage deliberately before broader wording audits. |
 | Example configs | `config*.example.json` | README, docs, desktop import, Android share/import | Examples are useful but not schema-tested across UIs | Examples can rot after schema changes | Add example round-trip tests. |
 | Backend helper taxonomy | `assets/`, `tools/`, `tunnel-node/` | Setup tab, Help, README, docs | JSON vs XHTTP is documented, but similar provider names remain easy to mix | Users deploy the wrong thing for the chosen mode | Add backend matrix, banners, and UI affordances. |
 
@@ -116,9 +266,9 @@ breakage even before visual polish begins.
 | P0.3 | Desktop save still omits some `Config` fields | Was true before Batch 2–3 | **Mitigated:** Desktop `ConfigWire` carries `domain_overrides`, batching flags, and aligns with all top-level keys; **`cargo test`** guard + **`tools/check-config-wire-vs-registry.py`** (repo-sanity) enforce registry parity (47 roots). |
 | P0.4 | Android config model lacks many backend fields | Android used to read/write a smaller subset; Batches 1, 18, and 19 closed canonical `account_groups`, LAN access controls, and `youtube_via_relay`. Remaining gaps include `domain_overrides`, `relay_rate_limit_*`, runtime profile, timeout, outage reset, max body, and other expert fields. | Classify every backend field as edit, preserve, default, ignore, or Android-only; preserve fields that Android cannot edit. |
 | P0.5 | SNI defaults are duplicated across Rust and Android | Same logical list in `DEFAULT_GOOGLE_SNI_POOL` and `DEFAULT_SNI_POOL`; drift was previously manual-only | **Closed:** CI **repo-sanity** runs `tools/check-sni-default-pool.py` via `python3 tools/run-repo-sanity.py` to require identical ordered hostnames. |
-| P0.6 | Android visible copy still has hard-coded English | `ModeOverviewCard`, mode labels, `Block QUIC`, language button labels | Move all user-facing copy to resources, then enforce values/values-fa parity. |
-| P0.7 | Persian Android strings can fall behind or diverge from English | As of 2026-05-03, EN/FA `strings.xml` each have 199 keys (paired); historical gap is closed but needs ongoing enforcement | Fill missing keys when new UI ships and add a script to keep parity. |
-| P0.8 | Status JSON is split between status API and Android JNI shape | `status_api::render_status_json` and `Native.statsJson` build JSON separately | Create a single Rust renderer for status/stats and call it from status API, JNI, support bundle, and desktop. |
+| P0.6 | Android visible copy still has hard-coded English | Batch 62 keeps the generated inventory at 3 Kotlin literals, all dynamic/technical tokens; `-Check` fails on any `localize` disposition; readiness detail prose is resource-backed and `detail = "..."` is scanned | Keep the generated inventory green and expand scanner coverage deliberately for any new visible-copy builder shape, rather than relying on ad hoc review. |
+| P0.7 | Persian Android strings can fall behind or diverge from English | As of 2026-05-05, EN/FA `strings.xml` each have 270 keys (paired); Batch 55 keeps key parity enforced and Batch 60 leaves no inventory-localize items while adding localized readiness details | Fill missing keys whenever new copy moves to resources, and keep the parity script mandatory. |
+| P0.8 | Status JSON is split between status API and Android JNI shape | **Mitigated in Batches 63-69:** `status_api::stats_snapshot_json_value` is the single live stats renderer; local `/status` and `Native.statsJson` call it; Android Usage Today accepts either raw stats or `stats` envelope; `docs/status-stats-json-contract.md` documents the stats contract; `doctor::doctor_report_json_value` documents the Doctor JSON contract; Desktop Monitor renders a typed Doctor summary guarded by `tools/check-desktop-doctor-summary.py`; Android JNI exposes `Native.doctorJson(configJson)` guarded by `tools/check-android-doctor-jni-bridge.py`; Android UI renders a localized Doctor summary guarded by `tools/check-android-doctor-summary-ui.py` | Extend this to a richer full status/Doctor DTO when the Observatory work begins. |
 | P0.9 | Platform defaults were not explicitly governed | Same underlying tension (ports/IP/log level) across Rust, Android MhrvConfig, and docs | **Mitigated:** `docs/platform-defaults.json` + `docs/platform-defaults.md` (generated) record intentional differences + rationale; CI **repo-sanity** runs `tools/check-platform-defaults.py` and `generate-platform-defaults-doc.py -Check` via `python3 tools/run-repo-sanity.py`. |
 | P0.10 | Thin Android automated test coverage vs Desktop/Rust | Earlier inventory missed JVM tests now present under `android/app/src/test` | **Partially mitigated:** `ConfigStoreTest`, `PlatformDefaultsContractTest`, CI **`android-unit-tests`** job; instrumentation/UI tests and broader JVM grids remain desirable before large UI refactors. |
 | P0.11 | Android release signing is intentionally committed but needs explicit governance | `android/app/release.jks` exists and `build.gradle.kts` documents the release signing model | **Policy documented** in `docs/android-signing.md` (risks, CI source of truth, rotation, recovery). Optional follow-up: move passwords to CI secrets if maintainers change the threat model. |
@@ -181,7 +331,7 @@ Additional inspected surfaces:
 | Generated artifacts | `target/`, `tunnel-node/target`, `dist/`, and `releases/` total roughly 9.8 GB in this workspace | Generated output can hide stale docs/screenshots and make the source tree feel unprofessional | Artifact policy, cleanup scripts, and release-source-of-truth checks. |
 | Packaged screenshot | `dist/mhrv-f-windows-installer-v1.2.13/docs/ui-screenshot.png` exists but no source `docs/*.png` exists | Release packages can ship stale visuals even when source docs look clean | Release packaging should fail or warn when packaged docs contain stale screenshot references. |
 | Persian documentation | Source docs include many English-only guides and several shorter Persian equivalents | Maintainer chose full Persian parity, so this is larger than an Android string cleanup | Add doc-level parity matrix and prioritize mode/setup/troubleshooting/helper docs. |
-| Android string parity | **Superseded count:** repo now enforces **199 / 199** EN/FA `strings.xml` keys (see Progress Log Batch 19); static Kotlin/readiness gates run in CI | Regression risk when new UI ships without FA keys | Keep parity tooling whenever expanding UI copy; treat historical 150/138 note as obsolete. |
+| Android string parity | **Current count:** repo now enforces **244 / 244** EN/FA `strings.xml` keys (Batch 59); static Kotlin/readiness/copy-inventory gates run in CI/local sanity | Regression risk when new UI ships without FA keys | Keep parity tooling whenever expanding UI copy; treat historical 150/138, 199/199, 213/213, 217/217, and 223/223 notes as obsolete current-state counts. |
 | Temporary dependency patch | `Cargo.toml` patches `tun2proxy` from a git branch until upstream support lands | Temporary compatibility code can become permanent invisible debt | Track as a compatibility surface with owner, upstream condition, and removal criteria. |
 | Release communication | `docs/RELEASE_NOTES.md`, release-drafter config, release workflow, and Telegram notification script coexist | Users can receive inconsistent release notes | Define one release-note source and generated/published projections. |
 | Helper tooling | JSON relays, XHTTP relays, Apps Script helpers, and tunnel-node each have separate docs and deploy shapes | Similar provider names can still confuse mode selection | Backend matrix and mode-specific rich setup surfaces. |
@@ -668,10 +818,10 @@ Mode contract tasks:
 
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
-| CM.1 | Add this mode table or equivalent to `docs/relay-modes.md` and `docs/index.md` | todo | | |
-| CM.2 | Ensure desktop labels never expose `vercel_edge` as the primary label except where explaining config JSON | todo | | |
-| CM.3 | Ensure Android labels match desktop labels for the four product modes | todo | | |
-| CM.4 | Add a test fixture for each mode that validates in Rust and can be loaded by desktop/Android | todo | | |
+| CM.1 | Add this mode table or equivalent to `docs/relay-modes.md` and `docs/index.md` | done | | Batch 52 adds `tools/check-mode-vocabulary.py`, which guards the canonical mode comparison in `docs/relay-modes.md`, the docs index link/table, and README mode labels. |
+| CM.2 | Ensure desktop labels never expose `vercel_edge` as the primary label except where explaining config JSON | done | | Batch 52 guards Desktop labels such as **Serverless JSON (no VPS)** while allowing `vercel_edge` only as the compatibility wire/config value in explanatory text and serialization code. |
+| CM.3 | Ensure Android labels match desktop labels for the four product modes | done | | Batch 52 guards Android mode selector labels: **Apps Script (MITM)**, **Serverless JSON (no VPS)**, **Direct fronting (no relay)**, and **Full tunnel (no cert)**. |
+| CM.4 | Add a test fixture for each mode that validates in Rust and can be loaded by desktop/Android | done | | Batch 53 adds `tools/check-mode-example-fixtures.py`, which guards every bundled mode example, the Rust `bundled_example_configs_load_and_validate` fixture test, `docs/parity-matrix.json` example coverage, and Android import/export preservation markers so Desktop-only advanced config is not dropped by mobile round-trips. |
 
 ### Config Field Ownership Matrix
 
@@ -710,7 +860,7 @@ Status contract tasks:
 |---|---|---|---|---|
 | CS.1 | Define `StatusSnapshot` / `ReadinessSnapshot` structs in Rust, separate from UI code | todo | | |
 | CS.2 | Render status JSON through one shared function used by status API, JNI, support bundle, and desktop | todo | | |
-| CS.3 | Give every readiness failure a stable ID and user-facing repair action | todo | | |
+| CS.3 | Give every readiness failure a stable ID and user-facing repair action | done | | Batch 54 adds `tools/check-readiness-ui-contract.py`, which guards Rust readiness IDs/rules/repair anchors, generated Android IDs, `docs/readiness-matrix.md`, Desktop repair actions, Android repair cards, and repo-sanity wiring. |
 | CS.4 | Map Doctor item IDs to UI cards instead of only log lines | todo | | |
 | CS.5 | Add fixtures for stopped, ready, missing credentials, CA missing, relay failing, degraded, LAN-exposed | todo | | |
 
@@ -1044,8 +1194,8 @@ Tasks:
 |---|---|---|---|---|
 | B0.1 | Capture Android screenshots in English: fresh, configured, running, error | todo | | |
 | B0.2 | Capture Android screenshots in Persian/RTL | todo | | |
-| B0.3 | List all hard-coded visible copy in Kotlin | todo | | |
-| B0.4 | List string key mismatches between `values` and `values-fa` | todo | | |
+| B0.3 | List all hard-coded visible copy in Kotlin | done | | Batch 56 adds `tools/generate-android-hardcoded-copy-inventory.py`, generates `docs/android-hardcoded-copy-inventory.md`, and wires the `-Check` form into repo sanity and CI/local parity. Batch 59 reduces the current inventory to 3 Android Kotlin visible literals, 0 marked for localization, 3 dynamic/technical tokens. |
+| B0.4 | List string key mismatches between `values` and `values-fa` | done | | Batch 55 adds `tools/check-android-string-resource-parity.py`, which proves there are currently zero key mismatches between English and Persian Android string resources and keeps the no-mismatch state guarded. |
 
 Acceptance criteria:
 
@@ -1153,9 +1303,9 @@ Tasks:
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
 | B4.1 | Move mode overview copy to string resources | todo | | |
-| B4.2 | Move labels like `Block QUIC`, coalesce labels, and dialog labels to resources | todo | | |
+| B4.2 | Move labels like `Block QUIC`, coalesce labels, and dialog labels to resources | done | | Batch 57 moves App Picker dialog copy. Batch 58 moves small HomeScreen control/dialog literals. Batch 59 moves readiness card title/statuses and all readiness row labels to English/Persian resources, dropping the generated hard-coded copy inventory from 30 to 3 literals with 0 localization candidates. |
 | B4.3 | Add missing Persian keys | todo | | |
-| B4.4 | Add script/check for values vs values-fa parity | todo | | |
+| B4.4 | Add script/check for values vs values-fa parity | done | | Batch 55 adds the local, Gradle-free Android string resource parity gate, wires it into repo sanity and CI/local parity, and documents it in `tools/README.md`. |
 | B4.5 | Review RTL layout for app bar, rows, and long technical tokens | todo | | |
 
 Acceptance criteria:
@@ -1664,7 +1814,7 @@ Tasks:
 | G3.4 | Refactor Desktop Monitor data reads to use the same schema fields and labels | todo | | |
 | G3.5 | Add support-bundle generation that includes redacted status JSON, config summary, Doctor summary, platform info, and recent logs | in_progress | | Support bundle writes `manifest.json`, `meta.json`, `config.redacted.json`, `doctor.json`, `status.json`, `trust.json`, and bounded/redacted `recent-logs.txt`; CLI preview exists via `mhrv-f support-bundle --preview`; Desktop/Android preview UI and richer live-log capture remain. |
 | G3.6 | Add Android support-bundle or shareable diagnostics summary, redacted by default | todo | | |
-| G3.7 | Add stable Doctor item IDs and severity levels for UI display | todo | | |
+| G3.7 | Add stable Doctor item IDs and severity levels for UI display | review | | Batch 66 documents and guards the shared Doctor JSON shape (`id`, `level`, `title`, `detail`, `fix`) and stable `ok` / `warn` / `fail` levels; UI card consumption still remains. |
 | G3.8 | Map Doctor results into Desktop cards: connectivity, CA trust, config validity, backend health, LAN exposure, update status | todo | | |
 | G3.9 | Map Doctor/SNI/update results into Android cards or sheets without requiring users to read logs first | todo | | |
 | G3.10 | Add per-mode stats empty states so Apps Script, direct, Serverless JSON, and full tunnel do not show irrelevant counters | todo | | |
@@ -1782,14 +1932,14 @@ Tasks:
 
 | ID | Task | Status | Owner | Evidence |
 |---|---|---|---|---|
-| H1.1 | Audit `assets/apps_script/Code.gs` against Apps Script mode docs and UI copy | todo | | |
-| H1.2 | Audit `assets/apps_script/CodeFull.gs` against full tunnel docs and UI copy | todo | | |
-| H1.3 | Audit `assets/apps_script/CodeCloudflareWorker.gs` against Cloudflare Worker relay docs | todo | | |
-| H1.4 | Verify auth header/key names match UI fields and docs examples | todo | | |
-| H1.5 | Verify request/response JSON shape is documented and covered by tests where possible | in_progress | | Batch 19 covers batch fallback behavior; Batch 20 adds compatibility metadata (`kind`, `version`, `protocol`, `features`) and `?compat=1` probe docs/tests for all Apps Script helpers. Deeper live relay-envelope tests remain. |
+| H1.1 | Audit `assets/apps_script/Code.gs` against Apps Script mode docs and UI copy | review | | Batch 6 Apps Script hardening gate checks `Code.gs` for single `ContentService` `doGet`, JSON output, IP-leak header stripping, safe batch fallback, original-index batch mapping, and compatibility metadata. Remaining work is wording-level audit against every Desktop/Android setup surface. |
+| H1.2 | Audit `assets/apps_script/CodeFull.gs` against full tunnel docs and UI copy | review | | Batch 6 Apps Script hardening gate checks `CodeFull.gs` with the same helper contract as `Code.gs`. Remaining work is wording-level audit against full-mode setup surfaces and tunnel-node operational docs. |
+| H1.3 | Audit `assets/apps_script/CodeCloudflareWorker.gs` against Cloudflare Worker relay docs | done | | Batch 49 adds `tools/check-cloudflare-worker-relay.py`, wired into local/CI parity, to keep `CodeCloudflareWorker.gs`, `tools/cloudflare-worker-json-relay/worker.js`, Desktop backend tools, docs, and release checklist aligned. |
+| H1.4 | Verify auth header/key names match UI fields and docs examples | review | | Batch 49 verifies the Cloudflare bridge keeps separate client-facing `AUTH_KEY` and Worker-facing `WORKER_AUTH_KEY`, and that docs/UI describe the two-secret shape. Full all-helper field-name drift remains covered by the broader config/readiness gates. |
+| H1.5 | Verify request/response JSON shape is documented and covered by tests where possible | in_progress | | Batch 19 covers batch fallback behavior; Batch 20 adds compatibility metadata (`kind`, `version`, `protocol`, `features`) and `?compat=1` probe docs/tests for all Apps Script helpers. Batch 49 adds a static Cloudflare Worker bridge JSON/base64 protocol guard. Deeper live relay-envelope tests remain. |
 | H1.6 | Add quota, blacklist, and account-group behavior to Setup/Help/docs in the same words | todo | | |
-| H1.7 | Add version marker or compatibility comment to helper scripts so support can identify stale deployments | review | | Batch 20 adds `HELPER_KIND`, `HELPER_VERSION`, `HELPER_PROTOCOL`, `HELPER_FEATURES`, and a non-secret `?compat=1` probe to `Code.gs`, `CodeFull.gs`, and `CodeCloudflareWorker.gs`, with source tests. |
-| H1.8 | Add release checklist entry to review Apps Script helper compatibility on every helper change | review | | Batch 19 adds source-level helper compatibility checks for batch fallback behavior. Batch 20 adds `docs/release-checklist.md`, helper compatibility probe docs, and CI execution for all Apps Script helper tests. |
+| H1.7 | Add version marker or compatibility comment to helper scripts so support can identify stale deployments | done | | Batch 20 adds `HELPER_KIND`, `HELPER_VERSION`, `HELPER_PROTOCOL`, `HELPER_FEATURES`, and a non-secret `?compat=1` probe to `Code.gs`, `CodeFull.gs`, and `CodeCloudflareWorker.gs`, with source tests. |
+| H1.8 | Add release checklist entry to review Apps Script helper compatibility on every helper change | done | | Batch 19 adds source-level helper compatibility checks for batch fallback behavior. Batch 20 adds `docs/release-checklist.md`, helper compatibility probe docs, and CI execution for all Apps Script helper tests. |
 
 ### H2. Full Tunnel And Tunnel-Node Ops Parity
 
@@ -2649,7 +2799,7 @@ Use this table for newly discovered work.
 | ID | Area | Item | Priority | Status | Owner | Notes |
 |---|---|---|---|---|---|---|
 | BL.1 | Docs | Audit screenshot references and remove, replace, or mark stale images historical | high | todo | | No current `docs/*.png` was found; still scan docs/release surfaces for stale references. |
-| BL.2 | Android | Add missing Persian string keys | high | done | | Superseded by enforced **199/199** EN/FA key parity + CI/static gates (Batch 19 onward); reopen only if parity tooling regresses. |
+| BL.2 | Android | Add missing Persian string keys | high | done | | Superseded by enforced **244/244** EN/FA key parity + CI/static gates (Batch 59 onward); reopen only if parity tooling regresses. |
 | BL.3 | Docs | Create canonical docs map | high | todo | | Prevent dispersed/overlapped docs from drifting. |
 | BL.4 | Desktop | Make top command center fixed | high | todo | | Current full UI scrolls. |
 | BL.5 | Desktop | Move minimal account group setup into Setup tab | high | todo | | Avoid sending first-run users to Advanced. |
@@ -2664,8 +2814,8 @@ Use this table for newly discovered work.
 | BL.14 | Tests | Add Rust `Config` vs Desktop `ConfigWire` parity test | critical | review | | Added focused `ConfigWire` regression test and broad all-current-field serialization guard; UI binary tests pass. |
 | BL.15 | Tests | Add Android `ConfigStore` load/save/import/export tests | critical | review | | Added JVM tests; not run locally because maintainer disallowed local Gradle download/install. |
 | BL.16 | Tests | Add SNI default parity check between Rust and Android | high | done | | **`tools/check-sni-default-pool.py`** + repo-sanity (Batch 1, 2026-05-03). |
-| BL.17 | Backend/UI | Create shared status/stats snapshot renderer | high | todo | | `/status` and JNI currently build JSON separately. |
-| BL.18 | Diagnostics | Map Doctor results to structured Desktop/Android summaries | high | todo | | Reduces log-driven troubleshooting. |
+| BL.17 | Backend/UI | Create shared status/stats snapshot renderer | high | done | Batch 63 | `status_api::stats_snapshot_json_value` now feeds local `/status` and Android JNI; `tools/check-status-stats-json-contract.py` guards against a future fork. |
+| BL.18 | Diagnostics | Map Doctor results to structured Desktop/Android summaries | high | in_progress | Batch 66 | Shared Doctor JSON renderer and contract now exist; remaining work is Desktop/Android card presentation. |
 | BL.19 | Support | Add redacted support bundle parity for CLI/Desktop/Android | high | todo | | Shared support payload improves debugging and privacy. |
 | BL.20 | Docs | Add platform defaults table for ports, IPs, proxy modes, CA trust, and Android VPN/TUN | high | done | | **`docs/platform-defaults.json`** + generated **`docs/platform-defaults.md`** + **`tools/check-platform-defaults.py`** / JVM contract test + CI (Batch 1, 2026-05-03). |
 | BL.21 | Full tunnel | Add end-to-end tunnel-node deploy/verify/support path | high | todo | | Full mode spans app, Apps Script, and tunnel-node. |
@@ -2773,7 +2923,7 @@ Add dated entries as work proceeds.
 **Program status (2026-05-03, phase-closure verified):**
 
 - **Verification spine (local):** `cargo fmt --check`; root `cargo clippy --all-targets --all-features -- -D warnings`; root `cargo test --all-targets --features ui`; `tunnel-node/` `cargo clippy --all-targets -- -D warnings` + `cargo test --all-targets`; `python tools/run-repo-sanity.py` (JS/`node --check`, Apps Script tests, repo cleanliness, **`report-nova-proxy-config.py --demo`**, Markdown links + heading anchors, Android config keys + `ownedKeys` vs registry, SNI pool parity, platform-defaults drift + generator `-Check` + JVM static gate, config-registry generator `-Check` + nested_fields + map `value_semantics`, ConfigWire vs registry roots, parity-matrix generator `-Check` + references, readiness PowerShell `-Check`, JSON/XML/Android stale scan).
-- **Internal elevation spine (Batches 1–23 in this document):** rough progress **~26%** — config/readiness/repo hygiene gates materially advanced; largest remaining slices are unified status/stats JSON, Trust Center depth, Route Advisor, Observatory, desktop/Android UI modularization, and full Persian doc parity.
+- **Internal elevation spine (Batches 1–23 in this document):** rough progress **~31%** — config/readiness/repo hygiene gates materially advanced; live status/stats JSON is shared, envelope-tolerant on Android, documented, and guarded; Doctor JSON now has a shared renderer/contract for support bundles and future UI cards; largest remaining slices are Trust Center depth, combined status DTOs, Route Advisor, Observatory, desktop/Android UI modularization, and full Persian doc parity.
 - **Strategic roadmap batches (external Batch 0–10 narrative):** **Batch 0** — **done**. **Batch 1** — **done** (scoped). **Batch 2** — **done** (scoped). **Batch 3** (Trust Center) — **in_progress (~35%)**: **`docs/trust-center.md`** + Help link + shared Rust `trust_center::snapshot()` + read-only Firefox/NSS probe + support-bundle `trust.json` + CLI `support-bundle --preview` / bundle `manifest.json` + bounded `recent-logs.txt`; remaining: deeper NSS CA-presence checks, Desktop/Android preview cards, stale-result/cancellation wiring. **Batch 4** (Backend Registry) — **in_progress (~12%)**: **`docs/backend-registry.md`** + Help link; remaining: unified health DTO in Rust, deduped checks, Desktop/Android Registry UI cards. **Batches 5–10** — **not started** as full programs (Route Advisor, Observatory, Android parity tranche, UI modernization, YouTube wizard, repo professionalization closure). Rolled-up strategic completion **~34%**.
 - **Naming clarity:** Maintainer changelog **`batch-2-2026-05-03.md`** / **`batch-3-2026-05-03.md`** refer to **ConfigWire** and **`ownedKeys`** drift gates — **not** roadmap **BATCH-2** / **BATCH-3** (Rust/Desktop parity history), **not** strategic **Batch 2** (donor absorption — **`batch-2-strategic-donor-absorption-2026-05-03.md`**), and **not** strategic **Batch 3** Trust Center hub (**`batch-3-trust-center-docs-2026-05-03.md`**).
 - **Remaining risk:** thin Android instrumentation coverage; stale-version/name scans beyond current substring gates. Android drift allowlists are centralized in **`tools/android_config_allowlists.py`** (2026-05-03).
@@ -5252,7 +5402,8 @@ Implemented details:
   `SupportRedaction.kt` remains the Android owner for:
   - `maskDeploymentId`;
   - `androidSupportSnapshot`;
-  - the `android-support-snapshot/v1` schema marker;
+  - the then-current support snapshot schema marker (originally
+    `android-support-snapshot/v1`; bumped to v2 in Batch 71);
   - redaction notes for auth keys, serverless auth keys, LAN tokens, upstream
     SOCKS5 credentials, raw unknown JSON, and deployment IDs.
 - The same gate checks that `HomeScreen.kt` only imports/calls
@@ -5614,6 +5765,2732 @@ Remaining after Batch 37:
 - Add CI/pre-provisioned Android JVM/device coverage for repeated Disconnect /
   Start / process-death scenarios when the Android test environment is
   available.
+
+### BATCH-38 - Desktop Test Relay mode static regression gate
+
+Status: complete.
+
+Scope:
+
+- Added a local/CI static gate for the Desktop **Test Relay** mode guard.
+- Wired it into `tools/run-repo-sanity.py`.
+- Documented it in `tools/README.md`.
+- Added a dedicated changelog entry.
+
+Changed files:
+
+- `tools/check-desktop-test-relay-mode-guard.py`
+- `tools/run-repo-sanity.py`
+- `tools/README.md`
+- `docs/changelog/batch-6-desktop-test-relay-mode-gate-2026-05-05.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- The gate extracts the `Ok(Cmd::Test(cfg))` arm from `src/bin/ui.rs`.
+- It requires the UI path to inspect `cfg.mode_kind().ok()`.
+- It requires explicit `Mode::Full` and `Mode::Direct` skip/explainer branches.
+- It requires full/direct skips to set `last_test_ok = None`, not a false
+  failure state.
+- It requires the skip branch to log `[ui] test skipped: ...` and `continue`
+  before the normal `test_cmd::run(&cfg).await` path.
+- It also checks `docs/relay-modes.md` for matching user-facing verification
+  guidance for `full` and `direct`.
+
+Parity notes:
+
+- Desktop UI and docs are now checked together for Test Relay semantics.
+- Android/runtime/backend behavior did not change in this batch.
+- This prevents Test Relay from becoming split-brain with the future Route
+  Advisor or runtime routing semantics.
+
+Concurrency / split-brain notes:
+
+- No new runtime state, background task, thread, or command was added.
+- The gate protects the command-state distinction between "not applicable" and
+  "failed" by requiring `last_test_ok = None` for skipped modes.
+
+Garbage collection:
+
+- No generated build output was created.
+- Removed the generated `tools/__pycache__` directory after verification.
+- No Gradle command was run and no Android build output was generated.
+- No legacy Test Relay fallback was kept for `full` / `direct`; those modes
+  remain skip/explainer-only until a true end-to-end verifier exists.
+
+Verification:
+
+- `python tools/check-desktop-test-relay-mode-guard.py`
+- `python tools/run-repo-sanity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+
+All checks passed on 2026-05-05. `run-repo-sanity.py` includes the new Desktop
+Test Relay mode guard plus the Android VPN lifecycle guard, Android config
+sharing/redaction/defaults gates, config/readiness/parity generated-doc gates,
+Apps Script syntax/tests, backend JavaScript syntax checks, and stale
+JSON/XML/Android scan.
+
+Remaining after Batch 38:
+
+- Future Route Advisor should reuse the same mode truth rather than introducing
+  a second independent Test Relay / route-verification explanation.
+
+### BATCH-39 - tunnel-node drain/concurrency static regression gate
+
+Status: complete.
+
+Scope:
+
+- Added a local/CI static guard for tunnel-node v1.9.9 drain correctness and
+  concurrency invariants.
+- Wired it into `tools/run-repo-sanity.py`.
+- Documented it in `tools/README.md`.
+- Added a dedicated changelog entry.
+
+Changed files:
+
+- `tools/check-tunnel-node-drain-concurrency.py`
+- `tools/run-repo-sanity.py`
+- `tools/README.md`
+- `docs/changelog/batch-6-tunnel-node-drain-concurrency-gate-2026-05-05.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- The gate requires `AbortOnDrop` to wrap TCP and UDP watcher tasks.
+- It requires batch TCP/UDP drain lists to carry cloned session `Arc`s.
+- It requires the batch and single-op `data` paths to clone session inners under
+  the global sessions map lock and release that map before writer/drain awaits.
+- It requires mixed TCP/UDP waits to use empty-aware `tokio::select!`.
+- It rejects the old conjunctive `tokio::join!` mixed-wait shape.
+- It requires EOF cleanup to follow drain-returned EOF sid lists, not raw EOF
+  atomic scans over all drained sessions.
+- It requires the two tunnel-node regression tests added during upstream
+  v1.9.9 absorption to remain present.
+- It requires the tunnel-node settle tuning constants to remain at `10 ms` step
+  and `1000 ms` max unless intentionally updated with parity docs.
+
+Parity notes:
+
+- Backend/runtime invariants are checked directly against `tunnel-node`.
+- Desktop and Android surfaces are unchanged in this batch.
+- The new gate keeps the implementation and regression tests aligned, reducing
+  split-brain between the written roadmap and actual tunnel-node behavior.
+
+Concurrency / split-brain notes:
+
+- No runtime code was changed; this batch adds a static enforcement layer around
+  existing concurrency/cancellation contracts.
+- The protected contracts specifically target watcher cancellation, session-map
+  lock ownership, mixed TCP/UDP wakeup ownership, and EOF cleanup ownership.
+
+Garbage collection:
+
+- No generated build output was created.
+- No Gradle command was run and no Android build output was generated.
+- Removed the generated `tools/__pycache__` directory after verification.
+- Process inspection found no active `gradle`, `java`, or `kotlinc` processes
+  during this batch's closeout.
+
+Verification:
+
+- `python tools/check-tunnel-node-drain-concurrency.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/run-repo-sanity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+
+The first targeted run caught an overly strict static-check assumption about the
+watcher vector's inferred type. The checker was corrected to require the actual
+`_watchers = Vec::with_capacity(...)` owner plus `AbortOnDrop(tokio::spawn(...))`
+wrapping, then the targeted gate, aggregate Python sanity route, full sanity
+route, docs, and cleanliness checks passed.
+
+### BATCH-40 - CI/local sanity parity static regression gate
+
+Status: complete.
+
+Scope:
+
+- Added a local/CI static guard for `.github/workflows/ci.yml` and
+  `tools/run-repo-sanity.py` parity.
+- Wired it into `tools/run-repo-sanity.py`.
+- Documented it in `tools/README.md` and the release checklist.
+- Added a dedicated changelog entry.
+
+Changed files:
+
+- `tools/check-ci-local-sanity-parity.py`
+- `tools/run-repo-sanity.py`
+- `tools/README.md`
+- `docs/release-checklist.md`
+- `docs/changelog/batch-6-ci-local-sanity-parity-gate-2026-05-05.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- The gate requires CI `repo-sanity` to call `python3 tools/run-repo-sanity.py`.
+- It requires CI to keep Node setup so backend JavaScript and Apps Script checks
+  can run through the local runner.
+- It requires CI to keep root Rust `fmt`, all-feature `clippy`, and UI-feature
+  tests.
+- It requires CI to keep `tunnel-node` clippy and tests.
+- It requires CI to keep the Android JVM `PlatformDefaultsContractTest` job in
+  the pre-provisioned CI environment.
+- It requires the local sanity runner to keep the recent high-risk static gates:
+  Android VPN lifecycle, Desktop Test Relay mode, tunnel-node
+  drain/concurrency, platform defaults, config registry, parity matrix, and
+  stale Android/docs scan.
+
+Parity notes:
+
+- CI and local repo sanity are now protected against split-brain drift.
+- Android Gradle remains CI/pre-provisioned only; local sanity remains static
+  and Gradle-free.
+- Rust/tunnel-node compile and executable tests remain in the CI `rust` job
+  because they need the Rust toolchain and Linux UI build dependencies.
+
+Concurrency / split-brain notes:
+
+- No runtime code was changed.
+- This batch adds governance around verification ownership: broad drift checks
+  live in `tools/run-repo-sanity.py`; compile/test gates remain in CI's Rust and
+  Android jobs.
+
+Garbage collection:
+
+- No generated build output was created.
+- Removed the generated `tools/__pycache__` directory after verification.
+- No Gradle command was run and no Android build output was generated.
+- Process inspection found no active `gradle`, `java`, or `kotlinc` processes
+  during closeout.
+
+Verification:
+
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-doc-links.py`
+- `python tools/run-repo-sanity.py`
+- `python tools/check-repo-cleanliness.py`
+
+All checks passed on 2026-05-05. The full repo sanity route confirmed CI/local
+parity after running backend JavaScript syntax checks, Apps Script syntax/tests,
+all Python drift gates, generated config/readiness/parity checks, and stale
+JSON/XML/Android scans.
+
+### BATCH-41 - Telegram release renderer hardening and static gate
+
+Status: complete.
+
+Scope:
+
+- Hardened the optional Telegram release notification renderer.
+- Added a no-network renderer test/gate.
+- Wired it into `tools/run-repo-sanity.py`.
+- Documented it in maintainer tools and the release checklist.
+- Added a dedicated changelog entry.
+
+Changed files:
+
+- `.github/scripts/telegram_release_notify.py`
+- `tools/check-telegram-release-notify.py`
+- `tools/run-repo-sanity.py`
+- `tools/README.md`
+- `docs/release-checklist.md`
+- `docs/changelog/batch-6-telegram-release-renderer-gate-2026-05-05.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `html_escape` for Telegram HTML text nodes.
+- Added `md_to_tg_html` for the small changelog Markdown subset used in
+  `docs/changelog/v*.md`.
+- Added bounded `build_changelog_reply` output for Telegram sendMessage.
+- Reused the safe renderer for compact Persian APK-caption release notes.
+- Added `tools/check-telegram-release-notify.py` to import the script without
+  contacting Telegram and verify escaping, Markdown conversion, blockquote
+  structure, and truncation behavior.
+
+Parity notes:
+
+- Telegram remains an optional projection of `docs/changelog/v*.md`.
+- GitHub Release artifacts/checksums/body from `release.yml` remain canonical.
+- No donor duplicate Telegram publisher was copied.
+
+Concurrency / split-brain notes:
+
+- No runtime app code was changed.
+- This removes release-note projection drift by making Telegram rendering
+  deterministic and locally testable.
+
+Garbage collection:
+
+- No generated build output was created.
+- Removed generated `.github/scripts/__pycache__` and `tools/__pycache__`
+  directories after verification.
+- No Gradle command was run and no Android build output was generated.
+- Process inspection found no active `gradle`, `java`, or `kotlinc` processes
+  during closeout.
+
+Verification:
+
+- `python tools/check-telegram-release-notify.py`
+- `python tools/check-doc-links.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/run-repo-sanity.py`
+- `python tools/check-repo-cleanliness.py`
+
+All checks passed on 2026-05-05. The first aggregate run caught a literal
+Markdown-link example in the changelog that looked like a real local link; the
+text was corrected and the docs/sanity checks passed afterward.
+
+### BATCH-42 - CI parity guard follows Telegram renderer gate
+
+Status: complete.
+
+Scope:
+
+- Updated the CI/local parity guard so it explicitly requires the Telegram
+  release notification renderer gate to remain in `tools/run-repo-sanity.py`.
+- Added a dedicated changelog entry.
+
+Changed files:
+
+- `tools/check-ci-local-sanity-parity.py`
+- `docs/changelog/batch-6-ci-parity-telegram-gate-followup-2026-05-05.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- Added `tools/check-telegram-release-notify.py` to the required local sanity
+  runner gates enforced by `tools/check-ci-local-sanity-parity.py`.
+
+Parity notes:
+
+- This connects Batch 40's CI/local parity ownership to Batch 41's Telegram
+  renderer hardening.
+- No app runtime, Android, backend, or release workflow behavior changed.
+
+Concurrency / split-brain notes:
+
+- No runtime code was changed.
+- Verification ownership is cleaner: if the Telegram renderer gate is removed
+  from local sanity later, CI/local parity fails too.
+
+Garbage collection:
+
+- No generated build output was created.
+- Removed generated `.github/scripts/__pycache__` and `tools/__pycache__`
+  directories after verification.
+- No Gradle command was run and no Android build output was generated.
+- Process inspection found no active `gradle`, `java`, or `kotlinc` processes
+  during closeout.
+
+Verification:
+
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py`
+
+All checks passed on 2026-05-05. The full repo sanity route confirmed the new
+required Telegram renderer gate is present in the local sanity runner.
+
+### BATCH-43 - README Persian guide links static gate
+
+Status: complete.
+
+Scope:
+
+- Added a local/CI static guard for the README Persian setup resources.
+- Wired it into `tools/run-repo-sanity.py`.
+- Added it to the CI/local parity guard.
+- Documented it in `tools/README.md`.
+- Added a dedicated changelog entry.
+
+Changed files:
+
+- `tools/check-readme-persian-guides.py`
+- `tools/run-repo-sanity.py`
+- `tools/check-ci-local-sanity-parity.py`
+- `tools/README.md`
+- `docs/changelog/batch-6-readme-persian-guide-links-gate-2026-05-05.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- The gate requires the README language switcher near the top.
+- It requires the Persian YouTube setup video link near the top.
+- It requires Kian Irani's Persian text guide and GitHub credit link near the
+  top.
+- It requires external-link safety attributes.
+- It rejects reintroducing a large YouTube thumbnail embed.
+
+Parity notes:
+
+- README onboarding is guarded without making external guides canonical.
+- In-repo Persian docs remain the maintained project documentation.
+- This absorbs the useful upstream README guide-link idea while keeping the
+  README compact.
+
+Concurrency / split-brain notes:
+
+- No runtime code was changed.
+- The gate prevents onboarding drift between the intended compact README layout
+  and later accidental media-heavy edits.
+
+Garbage collection:
+
+- No generated build output was created.
+- Removed generated `.github/scripts/__pycache__` and `tools/__pycache__`
+  directories after verification.
+- No Gradle command was run and no Android build output was generated.
+- Process inspection found no active `gradle`, `java`, or `kotlinc` processes
+  during closeout.
+
+Verification:
+
+- `python tools/check-readme-persian-guides.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-doc-links.py`
+- `python tools/run-repo-sanity.py`
+- `python tools/check-repo-cleanliness.py`
+
+All checks passed on 2026-05-05. The full repo sanity route confirmed the new
+README Persian guide gate is included in local/CI sanity.
+
+### BATCH-44 - Apps Script hardening static regression gate
+
+Status: complete.
+
+Scope:
+
+- Added a local/CI static guard for Apps Script helper hardening.
+- Wired it into `tools/run-repo-sanity.py`.
+- Added it to the CI/local parity guard.
+- Documented it in `tools/README.md`.
+- Added a dedicated changelog entry.
+- Expanded `CodeCloudflareWorker.gs` identity-header stripping to match the
+  fuller protected family used by the main helpers and Rust client.
+
+Changed files:
+
+- `assets/apps_script/CodeCloudflareWorker.gs`
+- `tools/check-apps-script-hardening.py`
+- `tools/run-repo-sanity.py`
+- `tools/check-ci-local-sanity-parity.py`
+- `tools/README.md`
+- `docs/changelog/batch-6-apps-script-hardening-gate-2026-05-05.md`
+- `elevation_audit_roadmap_source.md`
+
+Implemented details:
+
+- The gate requires exactly one `doGet` in every Apps Script helper.
+- It rejects `HtmlService.createHtmlOutput`.
+- It requires `ContentService` HTML responses for `doGet`.
+- It requires `ContentService` JSON responses for `_json`.
+- It requires safe-method replay fallback after whole-batch `fetchAll` failure.
+- It requires original-index batch response mapping.
+- It requires the forwarded/proxy/client-IP identity header family to be stripped
+  in all helper variants.
+- It requires the Rust `goog.script.init` unwrap helpers and regression tests.
+
+Parity notes:
+
+- Apps Script, Apps Script + Cloudflare Worker, full-mode Apps Script, and Rust
+  client compatibility are checked together.
+- Maintained helpers stay ContentService-based while the Rust client keeps
+  defense-in-depth for legacy HtmlService-wrapped deployments.
+
+Concurrency / split-brain notes:
+
+- No app runtime code was changed.
+- The helper variants now share one static hardening contract instead of
+  relying on separate informal review.
+
+Garbage collection:
+
+- No generated build output was created.
+- Removed generated `.github/scripts/__pycache__` and `tools/__pycache__`
+  directories after verification.
+- No Gradle command was run and no Android build output was generated.
+- Process inspection found no active `gradle`, `java`, or `kotlinc` processes
+  during closeout.
+
+Verification:
+
+- `python tools/check-apps-script-hardening.py`
+- `node assets/apps_script/tests/batch_fallback_test.js`
+- `node assets/apps_script/tests/compat_marker_test.js`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/run-repo-sanity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+
+All checks passed on 2026-05-05. The first targeted run caught a real parity
+gap: the Rust client stripped `x-forwarded-ssl`, but the main Apps Script
+helpers did not yet. The helper header lists were aligned and the targeted,
+Node, docs, cleanliness, and full repo-sanity checks passed afterward.
+
+## Batch 45 - LAN Sharing UI Drift Gate - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/check-lan-sharing-ui.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Documented the guard in `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-lan-sharing-ui-gate-2026-05-05.md`.
+
+Guarded contract:
+
+- `src/lan_utils.rs` remains the shared LAN helper module.
+- `detect_lan_ip` keeps the UDP route-table lookup and rejects unspecified
+  addresses.
+- `is_share_on_lan` and `is_loopback_only` remain the classifiers used by
+  Desktop.
+- LAN helper unit tests stay present.
+- Desktop keeps **Sharing and per-app routing** as the user-facing LAN section.
+- Desktop keeps **Share with other devices on my Wi-Fi / network** instead of
+  making normal users type `0.0.0.0`.
+- The checkbox owns the normal `127.0.0.1` to `0.0.0.0` transition.
+- Custom bind addresses show a **Custom bind** badge and are not overwritten by
+  Save.
+- Desktop keeps copyable HTTP and SOCKS5 endpoint controls.
+- Desktop keeps the detected LAN IP path and `this-device-LAN-IP` fallback.
+- Docs keep the same checkbox wording, automatic `listen_host = "0.0.0.0"`
+  behavior, UDP route lookup explanation, no-packet reassurance,
+  `lan_allowlist`, and SOCKS/token limitation.
+
+Parity notes:
+
+- Desktop UI, shared Rust helpers, docs, and CI/local sanity now share one LAN
+  sharing drift contract.
+- Android LAN sharing behavior was not changed in this batch; it remains a
+  separately documented platform behavior.
+
+Concurrency / split-brain notes:
+
+- No runtime code changed.
+- The new static gate prevents docs and UI from describing two different LAN
+  sharing workflows.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- Removed Python `__pycache__` directories created by local verification.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-lan-sharing-ui.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py`
+
+All checks passed on 2026-05-05.
+
+## Batch 46 - Fronting Groups Example Drift Gate - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/check-fronting-groups-example.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Documented the guard in `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-fronting-groups-example-gate-2026-05-05.md`.
+
+Guarded contract:
+
+- `config.fronting-groups.example.json` remains a `direct` mode starter.
+- The example stays loopback-only by default.
+- Vercel, Fastly, and Netlify/CloudFront groups stay present.
+- The Vercel starter keeps important domains such as `vercel.com`,
+  `vercel.app`, `nextjs.org`, `cursor.com`, and `ai-sdk.dev`.
+- The Fastly starter keeps the curated Reddit, Pinterest, CNN, BuzzFeed,
+  GitHub asset, PyPI, and Fastly domain families.
+- The Fastly starter keeps the known `151.101.x.x` anycast example IP and
+  `www.python.org` SNI.
+- The Netlify/CloudFront starter keeps `netlify.com` and `netlify.app`.
+- `docs/fronting-groups.md`, `docs/relay-modes.md`, and the parity matrix keep
+  pointing users to the example.
+
+Parity notes:
+
+- This is an example/docs/product-surface guard, not a runtime default change.
+- Donor/upstream Fastly starter value is preserved without presenting those
+  routes as guaranteed behavior.
+
+Concurrency / split-brain notes:
+
+- No runtime code changed.
+- The new static gate prevents the example JSON, docs, and parity matrix from
+  becoming separate hand-maintained truths.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- Removed Python `__pycache__` directories created by local verification.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-fronting-groups-example.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py`
+
+All checks passed on 2026-05-05.
+
+## Batch 47 - Full-Mode Coalesce Tuning Drift Gate - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/check-coalesce-tuning.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Documented the guard in `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-coalesce-tuning-gate-2026-05-05.md`.
+
+Guarded contract:
+
+- Rust full-mode client compiled defaults stay `10 ms` step and `1000 ms` max.
+- `ProxyServer` keeps translating config `0` into the compiled `10` / `1000`
+  runtime defaults.
+- Android defaults and import fallbacks stay concrete `10` / `1000`.
+- Android serialization continues omitting `coalesce_step_ms` and
+  `coalesce_max_ms` when they are at concrete defaults.
+- tunnel-node straggler settle stays `10 ms` step and `1000 ms` max.
+- Platform-defaults JSON, generated platform docs, advanced-options docs, and
+  tuning changelog keep explaining the same low-latency profile.
+
+Parity notes:
+
+- Rust serialized config still uses `0` as the absent-field sentinel.
+- Android exports concrete values to match the compiled profile.
+- Client and tunnel-node settle timing stay aligned.
+
+Concurrency / split-brain notes:
+
+- No runtime code changed.
+- The guard prevents Rust client constants, proxy fallbacks, Android defaults,
+  tunnel-node constants, and docs from drifting separately.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- Removed Python `__pycache__` directories created by local verification.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-coalesce-tuning.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py`
+
+All checks passed on 2026-05-05.
+
+## Batch 48 - Coalesce Example Cleanup - Completed 2026-05-05
+
+Implemented:
+
+- Updated `config.example.json` to use `coalesce_step_ms: 10`.
+- Updated `config.full.example.json` to use `coalesce_step_ms: 10`.
+- Extended `tools/check-coalesce-tuning.py` so bundled full-mode examples must
+  keep `coalesce_step_ms: 10` and `coalesce_max_ms: 1000`.
+- Updated `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-coalesce-example-cleanup-2026-05-05.md`.
+
+Issue found:
+
+- The previous upstream tuning absorption changed Rust, Android, tunnel-node,
+  and docs to the low-latency `10` / `1000` profile, but two user-facing
+  examples still carried the old `40` ms soft step.
+
+Resolution:
+
+- Examples now present the current maintained low-latency profile.
+- The old `40` value remains only in advanced docs as an explicit opt-in for
+  users who want older conservative packing.
+
+Parity notes:
+
+- Rust compiled defaults, Android defaults, tunnel-node settle timing, docs, and
+  examples now agree.
+
+Concurrency / split-brain notes:
+
+- No runtime code changed.
+- The coalesce guard now covers examples, preventing runtime/docs/example drift.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- Removed Python `__pycache__` directories created by local verification.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-coalesce-tuning.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py`
+
+All checks passed on 2026-05-05.
+
+## Batch 49 - Cloudflare Worker Relay Bridge Drift Gate - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/check-cloudflare-worker-relay.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Documented the guard in `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-cloudflare-worker-relay-gate-2026-05-05.md`.
+
+Guarded contract:
+
+- `tools/cloudflare-worker-json-relay/worker.js` requires `WORKER_AUTH_KEY`.
+- The Worker keeps loop detection and self-fetch protection.
+- The Worker strips forwarded/client-IP and Cloudflare identity headers.
+- The Worker keeps JSON/base64 request and response handling.
+- `assets/apps_script/CodeCloudflareWorker.gs` keeps
+  `HELPER_KIND = "apps_script_cloudflare_worker"`.
+- The Apps Script bridge keeps separate client-facing `AUTH_KEY` and
+  Worker-facing `WORKER_AUTH_KEY`.
+- The Apps Script bridge keeps single and batch forwarding to the Worker.
+- The Apps Script bridge keeps safe-method replay fallback after `fetchAll`
+  failure.
+- Docs, Desktop backend tools, and release checklist keep describing this as
+  optional `apps_script` egress, not a separate native mode or full tunnel
+  replacement.
+
+Parity notes:
+
+- Apps Script helper, Cloudflare Worker tool, Desktop backend tooling, docs, and
+  release checklist now share one static bridge contract.
+- This remains optional and does not alter default runtime behavior.
+
+Concurrency / split-brain notes:
+
+- No runtime code changed.
+- The guard prevents the Worker and Apps Script bridge from evolving as two
+  separate relay protocols.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- Removed Python `__pycache__` directories created by local verification:
+  `.github/scripts/__pycache__` and `tools/__pycache__`.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-cloudflare-worker-relay.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/run-repo-sanity.py`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 50 - Backend Roadmap Reconciliation - Completed 2026-05-05
+
+Implemented:
+
+- Reconciled stale H1 Apps Script backend parity roadmap rows after Batch 49.
+- Marked `H1.3` done because `tools/check-cloudflare-worker-relay.py` now
+  guards `CodeCloudflareWorker.gs`, the Cloudflare Worker script, Desktop
+  backend tooling, docs, and release checklist copy.
+- Updated `H1.4` to `review` with evidence for the Cloudflare bridge two-secret
+  contract: client-facing `AUTH_KEY` and Worker-facing `WORKER_AUTH_KEY`.
+- Expanded `H1.5` evidence to include the Cloudflare Worker bridge JSON/base64
+  static protocol guard while leaving deeper live relay-envelope tests explicit.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-backend-roadmap-reconciliation-2026-05-05.md`.
+
+Parity notes:
+
+- No runtime code changed.
+- Roadmap status now matches the current Desktop/docs/Apps Script/Worker
+  verification surface.
+- This removes stale planning drift without inventing a new backend or reviving
+  the deferred Val.town exit-node surface.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- Removed Python `__pycache__` directories created by the full local sanity
+  pass: `.github/scripts/__pycache__` and `tools/__pycache__`.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/check-ci-local-sanity-parity.py`
+
+## Batch 51 - Apps Script Roadmap Reconciliation - Completed 2026-05-05
+
+Implemented:
+
+- Reconciled stale H1 Apps Script helper rows after reviewing
+  `tools/check-apps-script-hardening.py`.
+- Updated `H1.1` and `H1.2` from blank `todo` to `review`, with the current
+  helper hardening gate as code/protocol/security evidence.
+- Kept the remaining wording-level Desktop/Android setup-surface audit explicit
+  instead of overclaiming completion.
+- Marked `H1.7` done because helper compatibility markers and `?compat=1`
+  probes exist for all Apps Script helper variants.
+- Marked `H1.8` done because helper compatibility review is represented in the
+  release checklist and local/CI helper tests.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-apps-script-roadmap-reconciliation-2026-05-05.md`.
+
+Parity notes:
+
+- No runtime code changed.
+- Roadmap state now separates helper code/protocol parity from wording parity,
+  avoiding both stale `todo` rows and false completion.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-apps-script-hardening.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 52 - Canonical Mode Vocabulary Gate - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/check-mode-vocabulary.py`.
+- Wired it into `tools/run-repo-sanity.py`.
+- Added it to `tools/check-ci-local-sanity-parity.py`.
+- Documented it in `tools/README.md`.
+- Updated `docs/relay-modes.md` so the Direct section explicitly includes the
+  user-facing **Direct fronting** label.
+- Updated roadmap rows `CM.1`, `CM.2`, and `CM.3` to done with this guard as
+  evidence.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-mode-vocabulary-gate-2026-05-05.md`.
+
+Guarded contract:
+
+- Wire/config values remain `apps_script`, `vercel_edge`, `direct`, and `full`.
+- User-facing labels remain **Apps Script**, **Serverless JSON**,
+  **Direct fronting**, and **Full tunnel**.
+- Desktop and Android selectors use friendly labels, while raw config names are
+  reserved for JSON/wire compatibility explanations.
+
+Parity notes:
+
+- Docs, Desktop, and Android mode vocabulary now have one static drift gate.
+- Runtime behavior did not change.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-mode-vocabulary.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 53 - Mode Example Fixtures Gate - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/check-mode-example-fixtures.py`.
+- Wired it into `tools/run-repo-sanity.py`.
+- Added it to `tools/check-ci-local-sanity-parity.py`.
+- Documented it in `tools/README.md`.
+- Updated roadmap row `CM.4` to done with this guard as evidence.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-mode-example-fixtures-gate-2026-05-05.md`.
+
+Guarded contract:
+
+- Every product mode has at least one bundled config example:
+  `apps_script`, `vercel_edge`, `direct`, and `full`.
+- Every bundled example has the expected wire `mode` value.
+- Rust keeps validating every bundled example through
+  `bundled_example_configs_load_and_validate`.
+- The parity matrix lists mode examples and does not point a mode at an
+  example whose JSON declares a different mode.
+- Android continues to preserve unknown root-level config fields and imported
+  account-group detail through `preservedUnknownRootJson` and
+  `preservedAccountGroupsJson`, so mobile editing cannot silently discard
+  Desktop-only advanced settings.
+
+Parity notes:
+
+- Desktop, Android, docs, examples, and Rust validation now share a static
+  fixture drift gate.
+- Runtime behavior did not change.
+- Android verification remains static/local in this batch; JVM tests stay
+  CI/pre-provisioned only to avoid local Gradle downloads.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-mode-example-fixtures.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 54 - Readiness UI Contract Gate - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/check-readiness-ui-contract.py`.
+- Wired it into `tools/run-repo-sanity.py`.
+- Added it to `tools/check-ci-local-sanity-parity.py`.
+- Documented it in `tools/README.md`.
+- Updated roadmap row `CS.3` to done with this guard as evidence.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-readiness-ui-contract-gate-2026-05-05.md`.
+
+Guarded contract:
+
+- Rust readiness IDs remain the source of truth in `src/readiness.rs`.
+- Every Rust readiness ID must appear in generated Android
+  `ReadinessIds.kt`.
+- Every Rust readiness ID must appear in `docs/readiness-matrix.md`.
+- Rust must keep rule, repair, and repair-anchor catalog functions and tests.
+- Desktop mode/dashboard repair actions must use `readiness::ReadinessId`,
+  `repair_for_id`, and `repair_anchor_for_target`.
+- Android Home must use generated `ReadinessIds`,
+  `ReadinessRepairTargets`, and `ReadinessRepairAnchors` for repair cards.
+- Repo sanity must keep both the generated readiness contract check and the
+  readiness UI drift gate.
+
+Parity notes:
+
+- This completes the stable readiness ID plus user-facing repair action
+  contract for Desktop, Android, docs, and local/CI sanity.
+- It does not mark `CS.4` complete; mapping Doctor item IDs into richer UI
+  cards remains separate future work.
+- Runtime behavior did not change.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-readiness-ui-contract.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 55 - Android String Resource Parity Gate - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/check-android-string-resource-parity.py`.
+- Wired it into `tools/run-repo-sanity.py`.
+- Added it to `tools/check-ci-local-sanity-parity.py`.
+- Documented it in `tools/README.md`.
+- Updated roadmap rows `B0.4` and `B4.4` to done with this guard as evidence.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-string-resource-parity-gate-2026-05-05.md`.
+
+Guarded contract:
+
+- English `values/strings.xml` and Persian `values-fa/strings.xml` must have
+  identical key sets.
+- Duplicate string names fail.
+- Blank string values fail.
+- High-risk mode/help/action/repair labels must remain present in both
+  locales.
+- The check is local and Gradle-free.
+
+Parity notes:
+
+- Batch 55 introduced the parity gate at 213 paired keys. After Batch 57, the
+  current English/Persian Android string resources have 217 keys each and zero
+  key mismatches.
+- This completes string key parity, not full copy migration. Hard-coded visible
+  Compose strings remain tracked by `B0.3`, `B4.1`, `B4.2`, and `B4.3`.
+- Runtime behavior did not change.
+
+Cleanup:
+
+- No generated build output was intentionally created.
+- No Gradle command was run.
+
+Verification:
+
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 56 - Android Hard-Coded Copy Inventory - Completed 2026-05-05
+
+Implemented:
+
+- Added `tools/generate-android-hardcoded-copy-inventory.py`.
+- Generated `docs/android-hardcoded-copy-inventory.md`.
+- Wired the inventory `-Check` mode into `tools/run-repo-sanity.py`.
+- Added it to `tools/check-ci-local-sanity-parity.py`.
+- Documented it in `tools/README.md`.
+- Linked it from `docs/index.md`.
+- Updated roadmap row `B0.3` to done with this generated inventory as evidence.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-hardcoded-copy-inventory-2026-05-05.md`.
+
+Guarded contract:
+
+- The scanner inventories Android Kotlin visible literals in `Text("...")`,
+  `label = "..."`, and `contentDescription = "..."`.
+- Generated `docs/android-hardcoded-copy-inventory.md` is source-controlled and
+  must be refreshed whenever Android visible copy changes.
+- The `-Check` mode fails if the source-controlled inventory is stale.
+- Generated readiness contract code is excluded so the inventory stays focused
+  on hand-authored UI source.
+
+Current inventory:
+
+- 30 visible hard-coded Android literals.
+- 24 should move to string resources in the later Android localization batch.
+- 6 are dynamic placeholders, pure symbols, or technical tokens that need review
+  separately from user-facing copy migration.
+
+Parity notes:
+
+- This closes the audit/listing task `B0.3`.
+- This does not close `B4.1`, `B4.2`, or `B4.3`; those remain the actual
+  migration/localization work.
+- Desktop, backend, and runtime behavior were not changed.
+- Android string resource key parity remains guarded separately by Batch 55.
+
+Cleanup:
+
+- The scanner was tightened before gate wiring so the nested Kotlin template
+  `Subject: ${cn ?: "(unknown)"}` is captured as a complete visible string.
+- Technical-looking visible labels such as `SOCKS5 LAN allowlist` and
+  `UDP/SOCKS5 path` are classified as localization work, not hidden under a
+  technical-token bucket.
+
+Verification:
+
+- `python tools/generate-android-hardcoded-copy-inventory.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 57 - Android App Picker Localization - Completed 2026-05-05
+
+Implemented:
+
+- Moved App Picker dialog visible copy from Kotlin literals to Android string
+  resources.
+- Added English resources for:
+  - `app_picker_title`
+  - `app_picker_search`
+  - `app_picker_show_system_apps`
+  - `app_picker_save`
+- Added matching Persian resources for the same keys.
+- Reused existing `btn_cancel` for the dismiss action.
+- Regenerated `docs/android-hardcoded-copy-inventory.md`.
+- Updated roadmap row `B4.2` to in progress with this dialog migration as
+  evidence.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-app-picker-localization-2026-05-05.md`.
+
+Current inventory:
+
+- 25 visible hard-coded Android literals remain.
+- 19 should move to string resources.
+- 6 are dynamic placeholders, pure symbols, or technical tokens.
+
+Parity notes:
+
+- Android English/Persian string resources remain paired.
+- This batch changes Android UI copy source only; Rust runtime, desktop, and
+  backend behavior were not changed.
+- The next localization slice should target the generated readiness/detail label
+  block or the smaller advanced-control literals (`+ Add`, `Block QUIC`) before
+  considering `B4.2` done.
+
+Verification:
+
+- `python tools/generate-android-hardcoded-copy-inventory.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 58 - Android Small Home Copy Localization - Completed 2026-05-05
+
+Implemented:
+
+- Moved small `HomeScreen.kt` visible literals into string resources:
+  - certificate subject label and unknown fallback;
+  - `+ Add`;
+  - `Block QUIC`;
+  - QUIC fallback helper text;
+  - upstream SOCKS5 `host:port` placeholder.
+- Added matching Persian resources for every new key.
+- Regenerated `docs/android-hardcoded-copy-inventory.md`.
+- Updated roadmap current counts and `B4.2` progress.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-small-home-copy-localization-2026-05-05.md`.
+
+Current inventory:
+
+- 21 visible hard-coded Android literals remain.
+- 16 should move to string resources.
+- 5 are dynamic placeholders, pure symbols, or technical tokens.
+- English/Persian Android string resources now have 223 paired keys.
+
+Parity notes:
+
+- Android resource parity remains enforced by Batch 55 tooling.
+- Runtime behavior, backend helpers, desktop UI, and config schemas were not
+  changed.
+- The remaining localization candidates are mostly readiness/detail labels in
+  `HomeScreen.kt`, so the next slice should migrate that block carefully.
+
+Verification:
+
+- `python tools/generate-android-hardcoded-copy-inventory.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 59 - Android Readiness Label Localization - Completed 2026-05-05
+
+Implemented:
+
+- Changed `AndroidReadinessItem` from raw `label: String` to
+  `@StringRes labelRes: Int`.
+- Resolved readiness labels at render time with `stringResource(item.labelRes)`.
+- Moved the readiness card title and status chips to string resources.
+- Moved all readiness row labels to English/Persian resources:
+  deployment IDs, `AUTH_KEY`, serverless origin, relay path, Google edge IP,
+  front SNI, routing mode, LAN exposure, LAN access guard, SOCKS5 LAN
+  allowlist, CA trust, Android app CA trust, CodeFull deployment,
+  tunnel-node URL, tunnel auth, UDP/SOCKS5 path, and tunnel health.
+- Regenerated `docs/android-hardcoded-copy-inventory.md`.
+- Updated roadmap current counts and marked `B4.2` done.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-readiness-label-localization-2026-05-05.md`.
+
+Current inventory:
+
+- 3 scanner-visible hard-coded Android literals remain.
+- 0 are marked `localize`.
+- 3 are dynamic/technical tokens:
+  - `#${index + 1}`
+  - `✕`
+  - `${state.latencyMs} ms`
+- English/Persian Android string resources now have 244 paired keys.
+
+Parity notes:
+
+- This completes the current generated inventory's localization candidates.
+- This does not claim every possible prose/detail string has been audited by a
+  broader scanner; future wording hardening should expand the inventory tool
+  deliberately rather than reintroducing ad hoc checks.
+- Runtime behavior, backend helpers, desktop UI, and config schemas were not
+  changed.
+
+Verification:
+
+- `python tools/generate-android-hardcoded-copy-inventory.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 60 - Android Readiness Detail Localization - Completed 2026-05-05
+
+Implemented:
+
+- Moved the selected-mode readiness-card `detail` prose in
+  `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt` to Android
+  string resources.
+- Added matching English and Persian resources for:
+  - Apps Script deployment-ID readiness states.
+  - Apps Script / CodeFull AUTH_KEY guidance.
+  - Serverless JSON origin, relay path, and auth guidance.
+  - Direct-mode Google edge IP and front SNI defaults.
+  - VPN/TUN vs proxy-only routing explanation.
+  - LAN exposure, LAN token, LAN allowlist, and SOCKS5 LAN warning details.
+  - CA installed/missing states and Android app user-CA warning.
+  - Full-mode CodeFull, tunnel-node URL, tunnel auth, UDP/SOCKS5, and tunnel
+    health guidance.
+- Changed `androidReadinessItems` to accept `Context` and resolve localized
+  details with `ctx.getString(...)`.
+- Kept readiness IDs, blocking/warning semantics, Connect gating, and dynamic
+  user-entered values unchanged.
+- Updated `tools/README.md` to record the current scanner limitation: it tracks
+  visible Compose literals, while this batch manually closed readiness builder
+  detail prose that the scanner did not yet detect.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-readiness-detail-localization-2026-05-05.md`.
+
+Current inventory:
+
+- 3 scanner-visible hard-coded Android literals remain.
+- 0 are marked `localize`.
+- 3 are dynamic/technical tokens:
+  - `#${index + 1}`
+  - `✕`
+  - `${state.latencyMs} ms`
+- English/Persian Android string resources now have 270 paired keys.
+
+Parity notes:
+
+- Android frontend copy for the readiness card now has label and detail parity
+  across English and Persian.
+- Desktop, backend/runtime, Apps Script, tunnel-node, config examples, and
+  schemas were not changed by this batch.
+- The no-split-brain rule is preserved: readiness IDs and logic still come from
+  the same Android builder; only display copy moved to resources.
+- Future user-facing Kotlin builder prose should either move directly into
+  resources or expand `tools/generate-android-hardcoded-copy-inventory.py` in
+  the same change.
+
+Verification:
+
+- `python tools/generate-android-hardcoded-copy-inventory.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 61 - Android Copy Scanner Builder Coverage - Completed 2026-05-05
+
+Implemented:
+
+- Expanded `tools/generate-android-hardcoded-copy-inventory.py` to detect
+  builder-style user-facing string literals:
+  - `title = "..."`
+  - `body = "..."`
+  - `detail = "..."`
+  - `placeholder = "..."`
+- Kept existing detection for `Text("...")`, `label = "..."`, and
+  `contentDescription = "..."`.
+- Regenerated `docs/android-hardcoded-copy-inventory.md`; the widened scanner
+  still reports only the 3 intentional dynamic/technical tokens.
+- Updated `tools/README.md` so future Android UI copy work has the exact
+  scanner contract.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-copy-scanner-builder-coverage-2026-05-05.md`.
+
+Current inventory:
+
+- 3 scanner-visible hard-coded Android literals remain.
+- 0 are marked `localize`.
+- 3 are dynamic/technical tokens:
+  - `#${index + 1}`
+  - `✕`
+  - `${state.latencyMs} ms`
+- English/Persian Android string resources remain at 270 paired keys.
+
+Parity notes:
+
+- This converts the Batch 60 manual readiness-detail prose audit into an
+  automated future guard.
+- Android frontend/backend/runtime behavior did not change.
+- Desktop, Apps Script, tunnel-node, docs content, and config schemas were not
+  changed.
+- The no-split-brain rule is improved: future visible-copy builder literals
+  are now caught by the same generated Android copy inventory rather than by a
+  separate review-only checklist.
+
+Verification:
+
+- `python tools/generate-android-hardcoded-copy-inventory.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 62 - Android Copy Zero-Localize Gate - Completed 2026-05-05
+
+Implemented:
+
+- Tightened `tools/generate-android-hardcoded-copy-inventory.py -Check` so it
+  fails if any detected literal is classified as `localize`.
+- Kept inventory output for intentional dynamic/technical tokens, but removed
+  the implicit ability to carry untranslated user-facing prose as a stale todo.
+- Regenerated `docs/android-hardcoded-copy-inventory.md` with the explicit
+  zero-localize rule.
+- Updated `tools/README.md` to describe the stricter contract.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-copy-zero-localize-gate-2026-05-05.md`.
+
+Current inventory:
+
+- 3 scanner-visible hard-coded Android literals remain.
+- 0 are marked `localize`.
+- 3 are dynamic/technical tokens:
+  - `#${index + 1}`
+  - `✕`
+  - `${state.latencyMs} ms`
+- English/Persian Android string resources remain at 270 paired keys.
+
+Parity notes:
+
+- The Android frontend localization surface now has two complementary gates:
+  string-resource key parity and zero detected hard-coded localizable prose.
+- CI/local repo-sanity inherits this through the existing
+  `tools/generate-android-hardcoded-copy-inventory.py -Check` step.
+- Desktop, backend/runtime, Apps Script, tunnel-node, config examples, and
+  schemas were not changed.
+- No legacy/deprecated compatibility path was added.
+
+Verification:
+
+- `python tools/generate-android-hardcoded-copy-inventory.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 63 - Status/Stats JSON Contract - Completed 2026-05-05
+
+Implemented:
+
+- Added `status_api::stats_snapshot_json_value` as the single Rust renderer for
+  live `StatsSnapshot` JSON fields.
+- Updated `status_api::render_status_json` to use the shared stats renderer.
+- Updated Android JNI `Native.statsJson(handle)` to use the shared renderer
+  instead of hand-serializing `StatsSnapshot`.
+- Preserved the Android compatibility aliases:
+  - `total_scripts`
+  - `blacklisted_scripts`
+- Kept the canonical status keys:
+  - `scripts_total`
+  - `scripts_blacklisted`
+- Added Rust regression tests proving:
+  - canonical and Android alias keys are emitted together;
+  - degradation reason bytes are trimmed to a clean string;
+  - the `/status` envelope carries the shared stats object.
+- Added `tools/check-status-stats-json-contract.py`.
+- Wired that guard into `tools/run-repo-sanity.py`.
+- Updated `tools/check-ci-local-sanity-parity.py` so CI/local parity requires
+  the new guard.
+- Documented the guard in `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-status-stats-json-contract-2026-05-05.md`.
+
+Parity notes:
+
+- Local `/status`, support bundle status rendering, and Android JNI now use the
+  same Rust stats-object renderer.
+- Android UI parsing remains compatible because `Native.statsJson(handle)` still
+  returns the raw stats object and includes the keys the Usage Today card reads.
+- This closes the immediate P0.8 live-stats split-brain risk; broader
+  Observatory/Doctor DTO unification remains a future UI/diagnostics phase.
+- Desktop UI, Android layout, Apps Script, tunnel-node, config examples, and
+  routing behavior were not changed.
+
+Verification:
+
+- `python tools/check-status-stats-json-contract.py`
+- `cargo fmt --check`
+- `cargo test status_api --lib`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 64 - Android Stats Envelope Tolerance - Completed 2026-05-05
+
+Implemented:
+
+- Added `statsPayloadFromJson` in
+  `android/app/src/main/java/com/farnam/mhrvf/ui/HomeScreen.kt`.
+- Updated the Usage Today card to use that parser instead of parsing
+  `Native.statsJson(handle)` directly.
+- The parser accepts both:
+  - the current raw Android JNI stats object;
+  - a local `/status`-style envelope with the stats object under `stats`.
+- Extended `tools/check-status-stats-json-contract.py` so repo-sanity verifies:
+  - `statsPayloadFromJson` exists;
+  - it accepts `root.optJSONObject("stats") ?: root`;
+  - the Usage Today card calls it.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-stats-envelope-tolerance-2026-05-05.md`.
+
+Parity notes:
+
+- Android remains compatible with the current JNI raw stats shape.
+- Future movement toward a fuller status envelope will not break the existing
+  Android Usage Today card.
+- The existing status/stats guard now covers both Rust serialization ownership
+  and Android frontend parsing tolerance.
+- Android UI text did not change; string parity remains at 270 paired keys and
+  copy inventory remains at 3 dynamic/technical tokens, 0 localize.
+- Desktop UI, Apps Script, tunnel-node, config schema, backend routing, and
+  support-bundle output were not changed.
+
+Verification:
+
+- `python tools/check-status-stats-json-contract.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `cargo fmt --check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 65 - Status/Stats Contract Documentation - Completed 2026-05-05
+
+Implemented:
+
+- Added `docs/status-stats-json-contract.md`.
+- Documented `status_api::stats_snapshot_json_value` as the live stats object
+  field source of truth.
+- Documented all current stats fields:
+  - relay totals and failures;
+  - cache hits/misses/bytes;
+  - byte and coalescing counters;
+  - script counts with canonical names and Android aliases;
+  - daily quota counters/reset;
+  - degradation level/reason.
+- Documented each envelope:
+  - local `/status`;
+  - support-bundle `status.json`;
+  - Android raw `Native.statsJson(handle)`;
+  - Android Usage Today raw-or-enveloped parser.
+- Linked the contract from `docs/index.md`.
+- Linked the contract from `tools/README.md`.
+- Tightened `tools/check-status-stats-json-contract.py` so it now verifies:
+  - docs hub link;
+  - tools README link;
+  - every required key is documented;
+  - the contract describes `status_api::stats_snapshot_json_value`;
+  - the contract describes `/status`, `status.json`, `Native.statsJson(handle)`,
+    and `root.optJSONObject("stats") ?: root`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-status-stats-contract-doc-2026-05-05.md`.
+
+Parity notes:
+
+- The live stats contract is now visible in code, tools, docs, and the roadmap.
+- Android remains intentionally raw-object-first today while being tolerant of
+  the `/status` envelope for future migration.
+- Support bundles remain tied to the same `status_api::render_status_json`
+  envelope rather than a separate diagnostics schema.
+- Desktop UI, Android UI layout/text, Apps Script, tunnel-node, runtime routing,
+  and config examples were not changed.
+- This completes the immediate P0.8 mitigation chain. The next status-related
+  phase is richer full status/Doctor DTO coverage for Observatory/diagnostics.
+
+Verification:
+
+- `python tools/check-status-stats-json-contract.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-repo-cleanliness.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 66 - Doctor JSON Contract - Completed 2026-05-05
+
+Implemented:
+
+- Added shared Doctor JSON renderer functions in `src/doctor.rs`:
+  - `doctor_level_str`;
+  - `doctor_item_json_value`;
+  - `doctor_report_json_value`.
+- Updated support-bundle export so `doctor.json` now calls
+  `doctor::doctor_report_json_value(&report)`.
+- Removed the support-bundle-local Doctor JSON field list.
+- Added Rust regression test:
+  `doctor_report_json_renderer_keeps_support_bundle_shape`.
+- Added `docs/doctor-json-contract.md`.
+- Linked the contract from `docs/index.md`.
+- Documented the contract in `tools/README.md`.
+- Added `tools/check-doctor-json-contract.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Wired the guard into `tools/check-ci-local-sanity-parity.py`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-doctor-json-contract-2026-05-05.md`.
+
+Parity notes:
+
+- CLI Doctor, support-bundle `doctor.json`, and future Desktop/Android
+  diagnostic cards now have one JSON shape to target.
+- The stable item fields are documented as:
+  - `id`;
+  - `level`;
+  - `title`;
+  - `detail`;
+  - `fix`.
+- Stable levels are documented as `ok`, `warn`, and `fail`.
+- This does not yet add Doctor cards to Desktop or Android; it creates the
+  guarded contract those cards should consume.
+- Desktop UI, Android UI, Apps Script, tunnel-node, runtime routing, status
+  stats, and config examples were not changed.
+
+Verification:
+
+- `python tools/check-doctor-json-contract.py`
+- `cargo fmt --check`
+- `cargo test doctor_report_json_renderer_keeps_support_bundle_shape --lib`
+
+## Batch 67 - Desktop Doctor Summary Card - Completed 2026-05-06
+
+Implemented:
+
+- Added `last_doctor_report: Option<doctor::DoctorReport>` and
+  `last_doctor_at: Option<Instant>` to Desktop UI state.
+- Added Desktop Doctor summary helpers in `src/bin/ui.rs`:
+  - `doctor_level_label`;
+  - `doctor_level_color`;
+  - `doctor_counts`;
+  - `render_doctor_summary_card`.
+- Rendered the Doctor summary in the Monitor tab, directly below live traffic
+  statistics.
+- Updated plain Doctor execution so the latest report is stored after the run.
+- Updated Doctor+Fix execution so the post-fix report is stored after repairs,
+  while log loops borrow report items instead of consuming them.
+- Added `tools/check-desktop-doctor-summary.py`.
+- Wired the new guard into `tools/run-repo-sanity.py`.
+- Wired the new guard into `tools/check-ci-local-sanity-parity.py`.
+- Updated `docs/doctor-json-contract.md` to mark Desktop Monitor as a current
+  consumer of typed Doctor report data.
+- Updated `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-desktop-doctor-summary-card-2026-05-06.md`.
+
+Parity notes:
+
+- Desktop now has a structured Doctor presentation instead of log-only Doctor
+  feedback.
+- Support bundles and future bridges still use the shared Doctor JSON renderer;
+  Desktop consumes the typed `DoctorReport` directly, which avoids adding a
+  second serialized field list.
+- Android remains intentionally tracked as a parity gap because there is not yet
+  a full Doctor JNI bridge or Android summary card.
+- Apps Script, Cloudflare Worker, tunnel-node routing, config examples, and
+  runtime networking behavior were not changed.
+
+Concurrency / split-brain notes:
+
+- Doctor runs still execute on the existing background task path.
+- UI state updates happen once per completed run under the existing shared
+  state mutex.
+- Doctor+Fix stores the `after` report so the Monitor card does not show stale
+  pre-repair diagnostics.
+- The new guard keeps Desktop from regressing to a separate log-only Doctor
+  presentation during later UI modularization.
+
+Cleanup:
+
+- No legacy Doctor output path was removed because CLI/log output remains useful
+  as the detailed transcript behind the summary card.
+- No Android bridge stub was added prematurely; the Android gap remains a
+  tracked future phase instead of a half-wired split-brain surface.
+
+Verification:
+
+- `python tools/check-desktop-doctor-summary.py`
+- `python tools/check-doctor-json-contract.py`
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+
+## Batch 68 - Android Doctor JNI Bridge - Completed 2026-05-06
+
+Implemented:
+
+- Added `Native.doctorJson(configJson)` to `Native.kt`.
+- Added `Java_com_farnam_mhrvf_Native_doctorJson` to `src/android_jni.rs`.
+- The JNI path:
+  - parses the supplied JSON through `Config::from_json_str`;
+  - runs Rust Doctor through `crate::doctor::run(&config)`;
+  - serializes the result with `crate::doctor::doctor_report_json_value(&report)`.
+- Invalid config JSON now returns a contract-shaped Doctor failure item with
+  `id = "config_json"`.
+- one-shot runtime initialization failure now returns a contract-shaped Doctor
+  failure item with `id = "tokio_runtime"`.
+- Added `tools/check-android-doctor-jni-bridge.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Wired the guard into `tools/check-ci-local-sanity-parity.py`.
+- Updated `docs/doctor-json-contract.md`.
+- Updated `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-doctor-jni-bridge-2026-05-06.md`.
+
+Parity notes:
+
+- Android now has a native bridge for the same structured Doctor contract used
+  by support bundles.
+- Desktop already renders the typed report directly from Rust state; Android can
+  now render the same shape from `Native.doctorJson(configJson)` in a future UI
+  card.
+- No Android visible UI copy was added, so string-resource parity did not change.
+- Apps Script, Cloudflare Worker, tunnel-node routing, config examples, and
+  runtime proxy behavior were not changed.
+
+Concurrency / split-brain notes:
+
+- The bridge uses the existing one-shot runtime pattern already used by update
+  and SNI probe JNI calls.
+- The bridge does not create long-lived background state or a new diagnostics
+  cache.
+- Android does not hand-build a Doctor JSON shape; success output is always the
+  shared Rust renderer.
+- Error output intentionally uses the same public `ok/items` envelope instead of
+  a separate Android-only error shape.
+
+Cleanup:
+
+- No UI stub was added before the mobile interaction design exists.
+- No duplicate Kotlin Doctor parser was added in this batch.
+- The Android Doctor UI gap remains tracked instead of being hidden by a
+  partial presentation.
+
+Verification:
+
+- `python tools/check-android-doctor-jni-bridge.py`
+- `python tools/check-doctor-json-contract.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `cargo fmt --check`
+
+## Batch 69 - Android Doctor Summary Card - Completed 2026-05-06
+
+Implemented:
+
+- Added Android Doctor UI models:
+  - `AndroidDoctorItem`;
+  - `AndroidDoctorReport`.
+- Added `parseAndroidDoctorReport` for the shared Doctor JSON contract.
+- Added `DoctorSummaryCard` to `HomeScreen.kt`.
+- Added Android home-screen state:
+  - `doctorReport`;
+  - `doctorRunning`.
+- Added `runAndroidDoctor`, which:
+  - snapshots `cfg.toJson()` before calling JNI;
+  - calls `Native.doctorJson(configSnapshot)` on `Dispatchers.IO`;
+  - parses the shared contract;
+  - ignores stale results if the config changed before Doctor returned.
+- Rendered the Doctor card between selected-mode readiness and Trust Center.
+- Added English and Persian string resources for all visible Doctor-card copy.
+- Added `tools/check-android-doctor-summary-ui.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Wired the guard into `tools/check-ci-local-sanity-parity.py`.
+- Updated `docs/doctor-json-contract.md`.
+- Updated `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-doctor-summary-card-2026-05-06.md`.
+
+Parity notes:
+
+- Desktop and Android now both have a visible Doctor summary surface.
+- Desktop consumes the typed Rust report directly; Android consumes the shared
+  JNI JSON contract.
+- Android visible copy was added in both EN/FA resources in the same change.
+- Apps Script, Cloudflare Worker, tunnel-node routing, config examples, and
+  runtime proxy behavior were not changed.
+
+Concurrency / split-brain notes:
+
+- The Android run path snapshots config before invoking the blocking JNI bridge.
+- Results are discarded if the active config changed while Doctor was running.
+- No long-lived Android diagnostics cache was added.
+- Android parses the documented Doctor contract instead of defining a separate
+  diagnostic schema.
+
+Cleanup:
+
+- The previous Android Doctor parity gap is narrowed from "no UI" to future
+  refinement work: richer detail expansion, support snapshot integration, and
+  Observatory/Route Advisor tie-ins.
+- No duplicate Doctor strings remain hard-coded in Kotlin; the hard-coded copy
+  inventory remains the enforcement point.
+
+Verification:
+
+- `python tools/check-android-doctor-summary-ui.py`
+- `python tools/check-android-doctor-jni-bridge.py`
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `cargo fmt --check`
+
+## Batch 70 - Android Support Snapshot Doctor Summary - Completed 2026-05-06
+
+Implemented:
+
+- Extended `SupportRedaction.kt` so `androidSupportSnapshot` accepts optional
+  Doctor JSON while preserving the old two-argument call shape through a
+  default parameter.
+- Added `doctorSupportSummary`, a package-local parser that extracts only:
+  - overall Doctor ok/fail state;
+  - total item count;
+  - ok/warn/fail counts;
+  - warning/failing item IDs.
+- Added support-snapshot fields:
+  - `doctor_available`;
+  - `doctor_ok`;
+  - `doctor_items_total`;
+  - `doctor_items_ok`;
+  - `doctor_items_warn`;
+  - `doctor_items_fail`;
+  - `doctor_problem_ids`.
+- Added a redaction note stating that Doctor details/fixes are summarized by
+  item id only.
+- Updated `HomeScreen.kt` to store `doctorJsonForSupport` alongside the parsed
+  Doctor UI model.
+- Updated `runAndroidDoctor` to save Doctor JSON for support only when the
+  result still matches the active `cfg.toJson()` snapshot.
+- Updated `persist` to clear cached Doctor UI/support state whenever the user
+  edits config.
+- Updated the Trust Center copy action to pass
+  `androidSupportSnapshot(cfg, caInstalled, doctorJsonForSupport)`.
+- Added JVM-test source coverage for Doctor summary inclusion and detail/secret
+  omission.
+- Strengthened `tools/check-android-support-redaction.py` to require:
+  - the optional Doctor JSON parameter;
+  - support-snapshot Doctor summary markers;
+  - stale-cache clearing in HomeScreen;
+  - current-config Doctor JSON handoff;
+  - tests that assert Doctor details and secrets are omitted.
+- Updated:
+  - `docs/android.md`;
+  - `docs/android.fa.md`;
+  - `docs/trust-center.md`;
+  - `tools/README.md`.
+- Regenerated `docs/android-hardcoded-copy-inventory.md` after the technical
+  support-snapshot literals changed.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-support-doctor-summary-2026-05-06.md`.
+
+Parity notes:
+
+- Desktop and CLI already expose full Doctor output through reviewed support
+  artifacts.
+- Android now exposes the same diagnostic state in mobile-appropriate summary
+  form.
+- The Doctor JSON contract remains the single source; Android does not invent a
+  second support-diagnostic schema.
+- No backend/runtime/config-example behavior changed.
+
+Concurrency / split-brain notes:
+
+- Android support snapshot ownership remains in `SupportRedaction.kt`.
+- The Compose screen remains a caller only and does not regain local redaction
+  helpers.
+- Doctor result handoff remains config-snapshot guarded.
+- Cached Doctor support JSON is cleared on config edit to avoid stale copied
+  diagnostics.
+
+Cleanup:
+
+- Removed the remaining roadmap gap that Android Doctor had no support-sharing
+  integration.
+- Avoided adding a raw Doctor export path on Android.
+- Avoided adding new visible copy, so no string-resource drift was introduced.
+
+Verification:
+
+- `python tools/check-android-support-redaction.py`
+- `python tools/check-android-doctor-summary-ui.py`
+- `python tools/check-android-doctor-jni-bridge.py`
+- `python tools/check-android-string-resource-parity.py`
+- `python tools/generate-android-hardcoded-copy-inventory.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `cargo fmt --check`
+- `cargo check --lib`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+- Removed Python `__pycache__` output after running local checks.
+- Confirmed no Gradle, Java, or Kotlin build processes were left running.
+
+## Batch 71 - Android Support Snapshot v2 Schema - Completed 2026-05-06
+
+Implemented:
+
+- Bumped the copied Android support snapshot marker from
+  `android-support-snapshot/v1` to `android-support-snapshot/v2`.
+- Updated `SupportRedactionTest.kt` to assert the v2 marker.
+- Updated `tools/check-android-support-redaction.py` to require the v2 marker.
+- Added `docs/android-support-snapshot.md`, documenting:
+  - current schema marker;
+  - field groups;
+  - Doctor summary fields;
+  - redaction contract;
+  - ownership and guard rails;
+  - required update checklist for future field changes.
+- Linked the new schema doc from `docs/index.md`.
+- Updated:
+  - `docs/android.md`;
+  - `docs/android.fa.md`;
+  - `docs/trust-center.md`;
+  - `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-support-snapshot-v2-schema-2026-05-06.md`.
+
+Parity notes:
+
+- Android copied support text now has an explicit schema marker matching the
+  Doctor-summary fields added in Batch 70.
+- Desktop/CLI support bundle schema remains separate because those artifacts
+  export full reviewed files instead of a single copied mobile text block.
+- No backend/runtime/config-example behavior changed.
+
+Cleanup:
+
+- Removed the stale active `android-support-snapshot/v1` marker from code,
+  tests, and the guard.
+- Did not add compatibility handling for old copied text; this is not an import
+  format and should stay clean.
+
+Verification:
+
+- `python tools/check-android-support-redaction.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-ci-local-sanity-parity.py`
+
+## Batch 72 - Android Support Snapshot Schema Guard - Completed 2026-05-06
+
+Implemented:
+
+- Added `tools/check-android-support-snapshot-schema.py`.
+- The guard verifies:
+  - active source/test marker `android-support-snapshot/v2`;
+  - Doctor summary fields in source, tests, and schema docs;
+  - raw Doctor JSON and Doctor details/fixes are documented as excluded;
+  - `docs/index.md` links the schema document;
+  - Android EN/FA docs, Trust Center docs, and tools docs reference the schema;
+  - local repo sanity includes the schema guard.
+- Wired the new guard into `tools/run-repo-sanity.py`.
+- Added the new guard to `tools/check-ci-local-sanity-parity.py` so CI/local
+  parity fails if repo sanity drops it.
+- Updated `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-android-support-snapshot-schema-guard-2026-05-06.md`.
+
+Parity notes:
+
+- The Android copied-support schema is now guarded at implementation, test,
+  documentation, index, and sanity-runner levels.
+- No Android UI strings, backend scripts, runtime proxy code, or config examples
+  changed.
+
+Cleanup:
+
+- No duplicate support-snapshot schema list was added to UI code.
+- The guard intentionally points to `SupportRedaction.kt` and the schema doc as
+  the owned surfaces instead of making `HomeScreen.kt` participate.
+
+Verification:
+
+- `python tools/check-android-support-snapshot-schema.py`
+- `python tools/check-android-support-redaction.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 73 - Changelog Index Gate - Completed 2026-05-06
+
+Implemented:
+
+- Added `tools/generate-changelog-index.py`.
+- Generated `docs/changelog/index.md`.
+- Linked the generated index from `docs/index.md`.
+- Updated `docs/changelog/README.md` with index policy and commands.
+- Updated `tools/README.md` with generator usage.
+- Wired `python tools/generate-changelog-index.py -Check` into
+  `tools/run-repo-sanity.py`.
+- Added the generator to `tools/check-ci-local-sanity-parity.py`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-changelog-index-gate-2026-05-06.md`.
+- Regenerated the index after adding that changelog entry, so the new batch is
+  discoverable immediately.
+
+Parity notes:
+
+- The audit/changelog trail now has a generated docs projection and a local/CI
+  drift gate.
+- Release-facing `docs/changelog/v*.md` files remain compatible with the
+  existing release/Telegram projection model.
+- No runtime, backend, Android UI, Desktop UI, or config behavior changed.
+
+Cleanup:
+
+- Older changelog entries without an H1 are explicitly marked `(no H1)` in the
+  generated table instead of being silently treated as polished titles.
+- No historical changelog files were rewritten in this batch.
+
+Verification:
+
+- `python tools/generate-changelog-index.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+
+## Batch 74 - Changelog Heading Normalization - Completed 2026-05-06
+
+Implemented:
+
+- Added missing first-level `#` headings to 10 historical changelog files.
+- Updated `tools/generate-changelog-index.py` so it now fails if a source
+  changelog has no H1.
+- Added `tools/check-changelog-headings.py`.
+- Wired the heading guard into `tools/run-repo-sanity.py`.
+- Added the heading guard to `tools/check-ci-local-sanity-parity.py`.
+- Updated:
+  - `docs/changelog/README.md`;
+  - `tools/README.md`.
+- Regenerated `docs/changelog/index.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-changelog-heading-normalization-2026-05-06.md`.
+- Regenerated the index again after adding that entry.
+
+Parity notes:
+
+- Changelog entries now have a uniform title contract.
+- The generated changelog index no longer needs `(no H1)` fallback titles.
+- Release-note `v*.md` behavior remains unchanged except that any such file
+  must also have an H1 if it is added under `docs/changelog/`.
+
+Cleanup:
+
+- Removed the loose historical no-H1 shape instead of preserving it as a
+  special case.
+- Did not rewrite older changelog bodies beyond adding a title.
+
+Verification:
+
+- `python tools/check-changelog-headings.py`
+- `python tools/generate-changelog-index.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+
+## Batch 75 - Release Governance Pack - Completed 2026-05-06
+
+Implemented:
+
+- Added top-level `CHANGELOG.md` as the human-facing release/changelog hub.
+- Added `docs/changelog/TEMPLATE.md` with sections for:
+  - UI / UX;
+  - config / schema;
+  - backend helpers;
+  - security / trust;
+  - docs;
+  - breaking / cleanup;
+  - parity;
+  - race / split-brain review;
+  - verification;
+  - cleanup.
+- Added `docs/versioning-policy.md`.
+- Added `docs/rollback-policy.md`.
+- Added `tools/check-release-governance.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Updated:
+  - `docs/release-checklist.md`;
+  - `docs/index.md`;
+  - `docs/changelog/README.md`;
+  - `docs/RELEASE_NOTES.md`;
+  - `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-release-governance-pack-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- Release communication now has an explicit hierarchy:
+  - GitHub Release is canonical for shipped artifacts and checksums;
+  - `docs/changelog/v<version>.md` is preferred per-tag release-note source
+    when present;
+  - `docs/RELEASE_NOTES.md` is rolling unreleased user-facing staging;
+  - `docs/changelog/batch-*.md` is maintainer audit trail.
+- Telegram remains an optional projection/mirror only.
+- No runtime, Android UI, Desktop UI, backend-helper, or config behavior
+  changed.
+
+Cleanup:
+
+- Replaced implicit release/changelog convention with linked docs and a guard.
+- Did not preserve a separate legacy release-note convention.
+
+Verification:
+
+- `python tools/check-release-governance.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+
+## Batch 76 - Contributor / Security Governance Pack - Completed 2026-05-06
+
+Implemented:
+
+- Added `CONTRIBUTING.md`.
+- Added `SECURITY.md`.
+- Added `docs/ownership.md`.
+- Added `.github/pull_request_template.md`.
+- Added issue templates:
+  - `.github/ISSUE_TEMPLATE/bug_report.yml`;
+  - `.github/ISSUE_TEMPLATE/android_problem.yml`;
+  - `.github/ISSUE_TEMPLATE/backend_helper_problem.yml`;
+  - `.github/ISSUE_TEMPLATE/feature_request.yml`.
+- Added `tools/check-repo-governance.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Updated:
+  - `docs/index.md`;
+  - `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-contributor-security-governance-pack-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- PR template now forces review of Desktop, Android, CLI, backend/helper, docs,
+  English/Persian copy, config/schema/readiness/status, and redaction impact.
+- Android/backend-specific issue templates ask for mode/backend details while
+  warning against secret leakage.
+- `docs/ownership.md` provides lightweight area ownership notes while CODEOWNERS
+  remains deferred until maintainers are available.
+- No runtime, config, backend helper, or app UI behavior changed.
+
+Cleanup:
+
+- Replaced implicit contributor/security process with explicit docs and static
+  enforcement.
+- Did not add formal CODEOWNERS prematurely.
+
+Verification:
+
+- `python tools/check-repo-governance.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+
+## Batch 77 - ADR Decision Record Pack - Completed 2026-05-06
+
+Implemented:
+
+- Added `docs/adr/README.md`.
+- Added `docs/adr/TEMPLATE.md`.
+- Added seed ADRs:
+  - `docs/adr/0001-committed-android-signing-material.md`;
+  - `docs/adr/0002-release-artifacts-and-authority.md`;
+  - `docs/adr/0003-android-config-preservation-and-simple-editor.md`;
+  - `docs/adr/0004-legacy-config-migration-boundary.md`;
+  - `docs/adr/0005-platform-defaults-are-documented-and-test-governed.md`;
+  - `docs/adr/0006-canonical-status-and-doctor-contracts.md`;
+  - `docs/adr/0007-lightweight-governance-before-codeowners.md`;
+  - `docs/adr/0008-no-stale-leftovers-cleanup-policy.md`.
+- Added `tools/check-adr-governance.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Updated:
+  - `docs/index.md`;
+  - `CONTRIBUTING.md`;
+  - `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-adr-decision-record-pack-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- Major cross-surface decisions now have a durable ADR layer instead of being
+  present only in roadmap/open-question text.
+- ADR coverage now includes signing material, release artifacts, Android config
+  preservation, legacy migration, platform defaults, status/Doctor contracts,
+  lightweight governance, and stale-leftover cleanup.
+- No runtime, config schema, backend helper, Desktop UI, or Android UI behavior
+  changed.
+
+Cleanup:
+
+- Replaced implicit major-decision capture with linked ADR docs and a guard.
+- Did not add formal CODEOWNERS prematurely.
+- Did not create a second release/changelog authority; ADRs reference existing
+  governance docs.
+
+Verification:
+
+- `python tools/check-adr-governance.py`
+- `python tools/check-repo-governance.py`
+- `python tools/check-release-governance.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+
+## Batch 78 - Verification Profile Pack - Completed 2026-05-06
+
+Implemented:
+
+- Added `docs/verification-profiles.json`.
+- Added `docs/verification-profiles.md`.
+- Added named verification profiles:
+  - `docs_governance`;
+  - `config_schema`;
+  - `android_ui`;
+  - `backend_helpers`;
+  - `desktop_runtime`;
+  - `full_tunnel`;
+  - `release_ready`.
+- Added `tools/check-verification-profiles.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Updated:
+  - `docs/index.md`;
+  - `CONTRIBUTING.md`;
+  - `tools/README.md`;
+  - `docs/release-checklist.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-verification-profile-pack-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- Verification expectations now have both a machine-readable contract and a
+  human-readable guide.
+- The profiles group existing checks by change type without replacing
+  repo-sanity, CI, release checklist, or Android CI authority.
+- No runtime, config schema, backend helper, Desktop UI, or Android UI behavior
+  changed.
+
+Cleanup:
+
+- Replaced scattered "which check should I run?" guidance with a linked profile
+  contract.
+- Did not introduce Gradle as a local verification requirement.
+
+Verification:
+
+- `python tools/check-verification-profiles.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 79 - Change Impact Checklist Pack - Completed 2026-05-06
+
+Implemented:
+
+- Added `docs/change-impact-checklist.json`.
+- Added `docs/change-impact-checklist.md`.
+- Added surface mappings for:
+  - docs / roadmap / changelog;
+  - config / registry / examples;
+  - Desktop UI / Rust runtime;
+  - Android UI / mobile bridge;
+  - backend helpers / relay scripts;
+  - full tunnel / tunnel-node;
+  - release / security / trust.
+- Added `tools/check-change-impact-checklist.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Updated:
+  - `docs/index.md`;
+  - `CONTRIBUTING.md`;
+  - `.github/pull_request_template.md`;
+  - `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-change-impact-checklist-pack-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- Verification profiles now answer "which commands should run?"
+- Change-impact checklist now answers "which adjacent surfaces must be checked?"
+- PR template now asks contributors to select verification profiles and review
+  touched surfaces against the checklist.
+- No runtime, config schema, backend helper, Desktop UI, or Android UI behavior
+  changed.
+
+Cleanup:
+
+- Replaced scattered impact-review expectations with a linked checklist and
+  static guard.
+- Did not add Gradle or new generated build output requirements.
+
+Verification:
+
+- `python tools/check-change-impact-checklist.py`
+- `python tools/check-verification-profiles.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 80 - Tooling Source Map Pack - Completed 2026-05-06
+
+Implemented:
+
+- Added `docs/tooling-source-map.json`.
+- Added `docs/tooling-source-map.md`.
+- Added mapped document/source/guard rows for:
+  - config registry docs;
+  - config parity matrix;
+  - mode/backend parity matrix;
+  - platform defaults;
+  - readiness matrix;
+  - Android hard-coded copy inventory;
+  - changelog index;
+  - status/stats contract;
+  - Doctor contract;
+  - Android support snapshot;
+  - verification profiles;
+  - change-impact checklist;
+  - ADR index;
+  - release checklist;
+  - ownership notes.
+- Added `tools/check-tooling-source-map.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Updated:
+  - `docs/index.md`;
+  - `CONTRIBUTING.md`;
+  - `tools/README.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-6-tooling-source-map-pack-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- High-risk generated and contract docs now name their source and guard.
+- This complements verification profiles and the change-impact checklist:
+  profiles say which commands to run, impact checklist says which surfaces to
+  review, and source map says which tool protects each contract doc.
+- No runtime, config schema, backend helper, Desktop UI, or Android UI behavior
+  changed.
+
+Cleanup:
+
+- Replaced implicit tool/doc ownership knowledge with a guarded source map.
+- Did not create a competing generator; the source map is hand-maintained and
+  guarded for existence/discoverability.
+
+Verification:
+
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-change-impact-checklist.py`
+- `python tools/check-verification-profiles.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 85 - Desktop UI Trust Renderer Extraction - Completed 2026-05-06
+
+Implemented:
+
+- Added `src/bin/ui_trust.rs`.
+- Moved Trust Center snapshot rendering into `src/bin/ui_trust.rs`.
+- Moved support-bundle preview rendering into `src/bin/ui_trust.rs`.
+- Added targeted `ui_trust` unit tests for:
+  - trust status labels;
+  - yes/no status labels;
+  - support-bundle redaction contract presence.
+- Extended `tools/check-desktop-ui-modularization.py` so direct Trust snapshot
+  and support-bundle preview rendering is forbidden in `src/bin/ui.rs`.
+- Updated:
+  - `tools/README.md`;
+  - `docs/tooling-source-map.json`;
+  - `docs/tooling-source-map.md`;
+  - `tools/check-tooling-source-map.py`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-7-desktop-ui-trust-renderer-extraction-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- This is a behavior-preserving Desktop-only extraction.
+- The Trust tab still shows CA status, browser/NSS status, signing policy,
+  support-bundle manifest, docs links, and certificate action buttons.
+- Trust action buttons remain in `src/bin/ui.rs` because they send private app
+  command-channel messages (`Cmd::InstallCa`, `Cmd::RemoveCa`,
+  `Cmd::CheckCaTrusted`).
+- No Android UI/config, backend helper script, runtime proxy, tunnel-node,
+  readiness, Doctor/status contract, release workflow, or example config
+  behavior changed.
+
+Cleanup:
+
+- Removed Trust status label helpers from `src/bin/ui.rs`.
+- Removed direct `trust_center::snapshot` calls from `src/bin/ui.rs`.
+- Removed direct `support_bundle::preview_manifest` calls from `src/bin/ui.rs`.
+- Kept command dispatch local to the main app module to avoid split-brain
+  ownership of app lifecycle commands.
+
+Verification:
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_trust`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-changelog-headings.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 84 - Desktop UI XHTTP Renderer Extraction - Completed 2026-05-06
+
+Implemented:
+
+- Moved the stateful XHTTP VLESS generator renderer into `src/bin/ui_xhttp.rs`.
+- Moved `XhttpDeployPipe` into `src/bin/ui_xhttp.rs`.
+- Moved XHTTP cloud-deploy polling into `src/bin/ui_xhttp.rs`.
+- Removed direct XHTTP cloud-deploy worker imports and worker-message matching
+  from `src/bin/ui.rs`.
+- Extended `tools/check-desktop-ui-modularization.py` so these symbols and
+  direct cloud-deploy calls are forbidden in `src/bin/ui.rs`:
+  - `XhttpDeployPipe`;
+  - `xhttp_vless_generator`;
+  - `poll_xhttp_cloud_deploy`;
+  - `xhttp_cloud_deploy::`;
+  - `XhttpDeployWorkerMsg`.
+- Updated:
+  - `tools/README.md`;
+  - `docs/tooling-source-map.json`;
+  - `docs/tooling-source-map.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-7-desktop-ui-xhttp-renderer-extraction-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- This is a behavior-preserving Desktop-only extraction.
+- The XHTTP panel still supports preset loading, VLESS link generation, copy,
+  manual deploy-note generation, Vercel/Netlify API deploys, deploy log display,
+  token clearing, and relay-host copy.
+- No Android UI/config, backend helper script, runtime proxy, tunnel-node,
+  readiness, Doctor/status contract, support bundle, release workflow, or
+  example config behavior changed.
+
+Cleanup:
+
+- Removed the XHTTP renderer and deploy-pipe struct from `src/bin/ui.rs`.
+- Removed direct `xhttp_cloud_deploy` and `XhttpDeployWorkerMsg` ownership from
+  the Desktop UI monolith.
+- Left only the top-level app update delegation in `src/bin/ui.rs`.
+
+Verification:
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_xhttp`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-changelog-headings.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 83 - Desktop UI Style Boundary - Completed 2026-05-06
+
+Implemented:
+
+- Added `src/bin/ui_style.rs`.
+- Moved shared Desktop visual primitives out of `src/bin/ui.rs`:
+  - visual color tokens;
+  - panel/card/shadow tokens;
+  - theme application;
+  - section title and section frame helpers;
+  - muted/help/callout helpers;
+  - mode-goal card helper;
+  - primary button helper;
+  - compact form-row helper.
+- Added targeted `ui_style` unit tests for:
+  - palette stability;
+  - form-row metrics;
+  - shadow/depth token stability.
+- Extended `tools/check-desktop-ui-modularization.py` so style primitives are
+  forbidden from reappearing in `src/bin/ui.rs`.
+- Updated:
+  - `tools/README.md`;
+  - `docs/tooling-source-map.json`;
+  - `docs/tooling-source-map.md`;
+  - `tools/check-tooling-source-map.py`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-7-desktop-ui-style-boundary-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- This is a behavior-preserving Desktop-only extraction.
+- The same theme values, color constants, form row dimensions, primary button
+  styling, section card styling, and help typography are now imported from
+  `ui_style.rs`.
+- No Android UI/config, backend helper, runtime proxy, tunnel-node, readiness,
+  Doctor/status contract, support bundle, release workflow, or example config
+  behavior changed.
+
+Cleanup:
+
+- Removed duplicated style constants and helper functions from `src/bin/ui.rs`.
+- Kept domain-specific renderers in `src/bin/ui.rs`; this slice establishes the
+  shared style boundary needed for cleaner future renderer extraction.
+
+Verification:
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_style`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-changelog-headings.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 82 - Desktop UI XHTTP Helper Extraction - Completed 2026-05-06
+
+Implemented:
+
+- Added `src/bin/ui_xhttp.rs`.
+- Moved XHTTP helper ownership out of `src/bin/ui.rs`:
+  - Netlify and Vercel XHTTP candidate lists;
+  - `XhttpGeneratorForm`;
+  - `XhttpGeneratorForm::default`;
+  - XHTTP platform defaults;
+  - XHTTP relay-host normalization;
+  - XHTTP path normalization;
+  - URI-component encoding for generated links;
+  - VLESS-link generation;
+  - manual deploy-note generation.
+- Added targeted `ui_xhttp` unit tests for:
+  - host normalization;
+  - path normalization;
+  - URI encoding;
+  - duplicate candidate suppression;
+  - deploy-target validation;
+  - platform default selection.
+- Extended `tools/check-desktop-ui-modularization.py` so the XHTTP helper
+  boundary is enforced with the existing Desktop UI modularization guard.
+- Updated:
+  - `tools/README.md`;
+  - `docs/tooling-source-map.json`;
+  - `docs/tooling-source-map.md`;
+  - `tools/check-tooling-source-map.py`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-7-desktop-ui-xhttp-helper-extraction-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- This is a behavior-preserving Desktop-only extraction.
+- No Android config handling, Android UI, backend helper script, readiness,
+  Doctor/status contract, support bundle, runtime proxy, tunnel-node, release
+  workflow, or example config behavior changed.
+- The XHTTP renderer remains in `src/bin/ui.rs` for now because it depends on
+  shared egui styling helpers and the deploy-worker pipe; only pure helper
+  logic moved in this batch.
+
+Cleanup:
+
+- Removed the XHTTP candidate constants, generator form/default implementation,
+  and pure XHTTP helper functions from `src/bin/ui.rs`.
+- Left no duplicate XHTTP generator helper implementation.
+- Kept the next extraction boundary explicit: stateful XHTTP rendering should
+  wait until shared style helpers and deploy plumbing have a cleaner home.
+
+Verification:
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_xhttp`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-doc-links.py`
+- `python tools/check-doc-anchors.py`
+- `python tools/check-changelog-headings.py`
+- `python tools/generate-changelog-index.py -Check`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+- `python tools/check-repo-cleanliness.py`
+
+## Batch 81 - Desktop UI Modularization Prep - Completed 2026-05-06
+
+Implemented:
+
+- Added `src/bin/ui_format.rs`.
+- Added `src/bin/ui_fs.rs`.
+- Moved formatting helpers out of `src/bin/ui.rs`:
+  - `fmt_duration`;
+  - `fmt_bytes`.
+- Moved file/resource helpers out of `src/bin/ui.rs`:
+  - `downloads_dir`;
+  - `reveal_in_file_manager`;
+  - `open_local_resource`;
+  - private resource/directory helpers.
+- Added small unit tests for the extracted helpers.
+- Added `tools/check-desktop-ui-modularization.py`.
+- Wired the guard into `tools/run-repo-sanity.py`.
+- Added the guard to `tools/check-ci-local-sanity-parity.py`.
+- Updated:
+  - `tools/README.md`;
+  - `docs/tooling-source-map.json`;
+  - `docs/tooling-source-map.md`.
+- Added detailed changelog entry:
+  `docs/changelog/batch-7-desktop-ui-modularization-prep-2026-05-06.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity notes:
+
+- This is a behavior-preserving Desktop-only extraction.
+- No config schema, backend helper, Android UI, Android JNI, CLI, readiness,
+  Doctor/status contract, support bundle, or runtime lifecycle behavior changed.
+- The new guard keeps these leaf helpers out of the monolith.
+
+Cleanup:
+
+- Removed the old helper definitions from `src/bin/ui.rs`.
+- Did not move stateful UI/rendering/background-thread logic in this first
+  modularization slice.
+
+Verification:
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-desktop-doctor-summary.py`
+- `python tools/check-desktop-test-relay-mode-guard.py`
+- `python tools/check-tooling-source-map.py`
+- `python tools/check-ci-local-sanity-parity.py`
+- `python tools/run-repo-sanity.py --skip-node`
+
+## Batch 89 - Desktop UI Trust Tab Extraction - Completed 2026-05-07
+
+Implemented:
+
+- Moved the Desktop Trust tab wrapper into `src/bin/ui_trust.rs`.
+- Kept the Trust tab's existing read-only snapshot, certificate action buttons,
+  support-bundle preview, and local docs links unchanged.
+- Promoted `Cmd` and `FormState` to crate-visible Desktop UI boundary types so
+  extracted tab renderers can send existing serialized commands without
+  duplicating command definitions.
+- Updated the Desktop UI modularization guard to require:
+  - `trust_center_tab` in `src/bin/ui_trust.rs`;
+  - CA action command wiring in `src/bin/ui_trust.rs`;
+  - Trust docs-link coverage in `src/bin/ui_trust.rs`;
+  - no Trust tab renderer or support-bundle preview implementation in
+    `src/bin/ui.rs`.
+- Updated tooling source-map docs and tools README ownership notes.
+- Added detailed changelog entry:
+  `docs/changelog/batch-7-desktop-ui-trust-tab-extraction-2026-05-07.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity / Split-Brain controls:
+
+- This is a behavior-preserving Desktop-only extraction.
+- The Trust tab still uses `FormState::to_config()` for snapshot config mapping.
+- The CA buttons still send the same `Cmd::InstallCa`, `Cmd::RemoveCa`, and
+  `Cmd::CheckCaTrusted` variants over the same command channel.
+- The Trust snapshot and support-bundle preview still consume shared Rust
+  trust/support-bundle APIs.
+- No Android, CLI, config schema, runtime proxy, backend helper, Doctor/status,
+  support-bundle export, or release workflow behavior changed.
+
+Cleanup:
+
+- Removed the inline `trust_center_tab` function from `src/bin/ui.rs`.
+- Removed direct Trust snapshot/support-bundle imports from `src/bin/ui.rs`.
+- Left no duplicate Trust tab renderer.
+- Kept Trust tab ownership beside the already-extracted Trust snapshot and
+  support-bundle preview renderers.
+
+Verification:
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_trust`
+- `python tools/check-desktop-ui-modularization.py`
+
+## Batch 90 - Desktop UI Setup Wizard Extraction - Completed 2026-05-07
+
+Implemented:
+
+- Added `src/bin/ui_setup.rs`.
+- Moved the Desktop first-run Setup wizard renderer out of `src/bin/ui.rs`.
+- Preserved the Mode, Relay, CA, and Diagnostics wizard steps.
+- Kept existing command wiring for:
+  - `Cmd::Test`;
+  - `Cmd::Doctor`;
+  - `Cmd::InstallCa`;
+  - `Cmd::CheckCaTrusted`.
+- Kept Test relay / Doctor validation on the same `FormState::to_config()`
+  path.
+- Updated the Desktop UI modularization guard to require:
+  - `show_first_run_wizard` in `src/bin/ui_setup.rs`;
+  - wizard command wiring in `src/bin/ui_setup.rs`;
+  - no first-run wizard renderer in `src/bin/ui.rs`.
+- Updated tooling source-map docs and tools README ownership notes.
+- Added detailed changelog entry:
+  `docs/changelog/batch-7-desktop-ui-setup-wizard-extraction-2026-05-07.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity / Split-Brain controls:
+
+- This is a behavior-preserving Desktop-only extraction.
+- The wizard still mutates the same `FormState` fields and sends the same
+  command variants.
+- No Android, CLI, config schema, runtime proxy, backend helper, readiness,
+  Doctor/status, support-bundle export, or release workflow behavior changed.
+
+Cleanup:
+
+- Removed the inline `show_first_run_wizard` function from `src/bin/ui.rs`.
+- Left no duplicate first-run wizard renderer.
+- Kept the larger Setup tab form in `src/bin/ui.rs` for now; only the
+  self-contained wizard moved in this slice.
+
+Verification:
+
+- `cargo fmt`
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_setup`
+- `python tools/check-desktop-ui-modularization.py`
+
+## Batch 91 - Desktop UI Mode Dashboard Extraction - Completed 2026-05-07
+
+Implemented:
+
+- Added `src/bin/ui_mode.rs`.
+- Moved Desktop mode summary copy and renderer out of `src/bin/ui.rs`.
+- Moved Desktop mode dashboard data construction and renderer out of
+  `src/bin/ui.rs`.
+- Moved operational readiness augmentation and Desktop repair-route mapping with
+  the dashboard code they protect.
+- Moved dashboard chip/action helpers (`info_chip`, `ghost_action`) into the
+  same module.
+- Moved the existing mode-dashboard readiness and repair-routing tests into
+  `src/bin/ui_mode.rs`.
+- Updated the Desktop UI modularization guard to require:
+  - mode summary/dashboard renderers in `src/bin/ui_mode.rs`;
+  - readiness/repair tests in `src/bin/ui_mode.rs`;
+  - no mode-dashboard definitions in `src/bin/ui.rs`.
+- Updated tooling source-map docs and tools README ownership notes.
+- Added detailed changelog entry:
+  `docs/changelog/batch-7-desktop-ui-mode-dashboard-extraction-2026-05-07.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity / Split-Brain controls:
+
+- This is a behavior-preserving Desktop-only extraction.
+- The mode dashboard still consumes the same `FormState` and shared readiness
+  IDs.
+- Repair buttons still route to the same Desktop tabs and repair anchors.
+- No Android, CLI, config schema, runtime proxy, backend helper, support-bundle,
+  Doctor/status, or release workflow behavior changed.
+
+Cleanup:
+
+- Removed inline mode summary, mode dashboard, readiness repair routing, and
+  dashboard chip helper definitions from `src/bin/ui.rs`.
+- Left no duplicate mode-dashboard readiness tests in `src/bin/ui.rs`.
+
+Verification:
+
+- `cargo fmt`
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_mode`
+- `python tools/check-desktop-ui-modularization.py`
+
+## Batch 92 - Desktop UI Modularization Closure - Completed 2026-05-07
+
+Implemented:
+
+- Closed the current Desktop UI modularization sequence with an explicit
+  maintainer record.
+- Confirmed the extracted owners now cover:
+  - formatting helpers (`src/bin/ui_format.rs`);
+  - file/resource helpers (`src/bin/ui_fs.rs`);
+  - style/theme/form primitives (`src/bin/ui_style.rs`);
+  - XHTTP helper/rendering surface (`src/bin/ui_xhttp.rs`);
+  - Doctor summary renderer (`src/bin/ui_doctor.rs`);
+  - Help walkthrough/backend-tool catalog (`src/bin/ui_help.rs`);
+  - Trust tab/snapshot/support-bundle preview (`src/bin/ui_trust.rs`);
+  - first-run Setup wizard (`src/bin/ui_setup.rs`);
+  - mode summary/dashboard/readiness repair routing (`src/bin/ui_mode.rs`).
+- Added detailed closure changelog entry:
+  `docs/changelog/batch-7-desktop-ui-modularization-closure-2026-05-07.md`.
+- Regenerated `docs/changelog/index.md`.
+
+Parity / Split-Brain controls:
+
+- No runtime, config schema, Android, CLI, backend helper, support-bundle export,
+  or release workflow behavior changed.
+- Existing guards now enforce the extracted module owners.
+- Vocabulary and readiness guards follow the extracted mode-dashboard owner.
+
+Cleanup:
+
+- Did not force another extraction from the remaining `src/bin/ui.rs` body. The
+  remaining code is mostly stateful app shell, tab composition, form editing,
+  and background command handling, which should be split later only as larger
+  behavior-preserving refactors.
+- Kept the current sequence closed at a stable boundary with full sanity green.
+
+Verification:
+
+- `cargo fmt --check`
+- `cargo check --features ui --bin mhrv-f-ui`
+- `cargo test --features ui --bin mhrv-f-ui ui_mode`
+- `python tools/check-desktop-ui-modularization.py`
+- `python tools/check-mode-vocabulary.py`
+- `python tools/check-readiness-ui-contract.py`
+- `python tools/run-repo-sanity.py --skip-node`
 
 ## Open Questions
 

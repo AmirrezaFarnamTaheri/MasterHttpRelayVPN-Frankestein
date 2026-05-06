@@ -23,3 +23,9 @@ android/**/.cxx/
 
 # Local Gradle cache accidentally created in repo root (should never be committed).
 .gradle-user-home/
+/Nova-Proxy-App-main
+/Nova-Proxy-App-main
+/Nova-Proxy-App-main
+/Nova-Proxy-App-main/proxy
+/mhr-cfw-main
+/youtube-domain-fronting-patch-main

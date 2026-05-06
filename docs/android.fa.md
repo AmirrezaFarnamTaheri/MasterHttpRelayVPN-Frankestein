@@ -292,6 +292,12 @@ JSON خام هم برای انتقال دستی قابل قبول است.
 یا Deployment ID کامل را وارد خروجی کند. باندل کامل پشتیبانی همچنان در
 دسکتاپ/CLI کامل‌تر است، ولی این snapshot موبایل از اشتراک config خام امن‌تر
 است.
+اگر Doctor داخل برنامه را برای config فعلی اجرا کرده باشی، همین snapshot یک
+خلاصهٔ امن از Doctor هم اضافه می‌کند: موجود بودن نتیجه، وضعیت کلی، تعداد
+آیتم‌ها و شناسهٔ آیتم‌های warning/fail. عنوان، detail، fix، URL endpointها و
+JSON خام Doctor کپی نمی‌شود.
+schema فعلی این متن کپی‌شده در
+[`docs/android-support-snapshot.md`](android-support-snapshot.md) ثبت شده است.
 مالک این منطق در کد اندروید `SupportRedaction.kt` است و قرارداد JVM آن در
 `SupportRedactionTest.kt` ثبت شده؛ صفحهٔ Compose فقط از همین utility استفاده
 می‌کند. در local/CI، دستور `python tools/check-android-support-redaction.py`

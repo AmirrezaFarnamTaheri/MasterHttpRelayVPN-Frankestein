@@ -155,6 +155,12 @@ Android's smaller copied support snapshot is intentionally separate until a
 future JNI/shared bundle exporter exists, but its policy is also no longer
 embedded in UI code: `SupportRedaction.kt` owns Android deployment-ID masking
 and snapshot generation, with `SupportRedactionTest.kt` guarding the contract.
+When Android has a current in-app Doctor result, the snapshot includes only
+Doctor availability, overall ok/fail state, item counts, and warning/failing
+item IDs. It deliberately omits Doctor titles, details, fixes, endpoint URLs,
+and raw JSON so mobile sharing does not become a second unredacted Doctor
+export path. The copied-text schema is documented in
+[`android-support-snapshot.md`](android-support-snapshot.md).
 `tools/check-android-support-redaction.py` is the no-Gradle local/CI drift gate:
 it keeps `HomeScreen.kt` as a caller only and requires static assertions for
 auth keys, serverless auth keys, LAN tokens, upstream SOCKS5 credentials, raw

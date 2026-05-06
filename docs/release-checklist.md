@@ -5,6 +5,21 @@ build artifacts; this checklist catches human-facing drift that CI cannot infer.
 
 ## Source And Generated Files
 
+- Confirm release/changelog governance surfaces are aligned:
+
+  ```bash
+  python tools/check-release-governance.py
+  python tools/check-changelog-headings.py
+  python tools/generate-changelog-index.py -Check
+  ```
+
+  `CHANGELOG.md` is the release-notes hub, `docs/RELEASE_NOTES.md` is the
+  rolling user-facing staging area, `docs/changelog/v<version>.md` is the
+  preferred per-tag source when present, and `docs/changelog/batch-*.md` remains
+  the maintainer audit trail. Use `docs/changelog/TEMPLATE.md` for new batch
+  notes and follow `docs/versioning-policy.md` / `docs/rollback-policy.md` for
+  release classification and recovery.
+
 - Run the normal Rust checks: format, tests, clippy, and the UI-feature build
   from the repo root; then run **`tunnel-node`** the same way CI does:
 
@@ -92,14 +107,23 @@ build artifacts; this checklist catches human-facing drift that CI cannot infer.
   python tools/run-repo-sanity.py
   ```
 
-  (`tools/README.md` documents `--skip-node` / `--skip-readiness`.) Alternatively,
-  run individual drift gates such as:
+  (`tools/README.md` documents `--skip-node` / `--skip-readiness`.)
+  [`docs/verification-profiles.md`](verification-profiles.md) groups the same
+  checks by change type for pre-release triage. Alternatively, run individual
+  drift gates such as:
 
   ```bash
   python tools/check-doc-anchors.py
   python tools/check-android-config-keys.py
   python tools/check-android-owned-keys-list.py
   python tools/check-sni-default-pool.py
+  ```
+
+- Confirm CI still delegates the broad drift gate to the local runner and keeps
+  the Rust/tunnel-node/Android JVM checks intact:
+
+  ```bash
+  python tools/check-ci-local-sanity-parity.py
   ```
 
 ## Apps Script Helpers
@@ -160,6 +184,12 @@ build artifacts; this checklist catches human-facing drift that CI cannot infer.
   and optional changelog text. Treat Telegram as a **convenience mirror**, not
   a second source of truth: if a post disagrees with the GitHub Release, trust
   GitHub.
+- The Telegram renderer is checked locally without contacting Telegram:
+
+  ```bash
+  python tools/check-telegram-release-notify.py
+  ```
+
 - Maintainer batch logs (for example `docs/changelog/batch-*.md`) are for audit
   and bookkeeping; they do not replace per-version release notes or the GitHub
   Release body.
